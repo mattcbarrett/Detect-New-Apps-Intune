@@ -13,7 +13,6 @@ $EMAIL_FROM = $env["EMAIL_FROM"]
 $EMAIL_TO = $env["EMAIL_TO"]
 $STORAGE_ACCOUNT = $env["STORAGE_ACCOUNT"]
 $STORAGE_CONTAINER = $env["STORAGE_CONTAINER"]
-$BLOB_NAME_PREFIX = $env["BLOB_NAME_PREFIX"]
 
 # Import functions
 Import-Module .\BlobStorage.psm1
@@ -21,7 +20,7 @@ Import-Module .\SendEmail.psm1
 
 # Define variables
 $date = Get-Date -Format MMddyyyy
-$blobName = "${BLOB_NAME_PREFIX}_${date}.csv"
+$blobName = "detected_apps_${date}.csv"
 
 try {
   # Connect to MS Graph so we can pull device & software information
