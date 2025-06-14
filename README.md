@@ -10,22 +10,22 @@ New-AzRoleAssignment -SignInName azure_user_name@domain.com -RoleDefinitionName 
 
 ## Bicep template
 
-Retrieve your user's ObjectID:
+Run:
 ```
-az ad signed-in-user show --query id --output tsv
+az deployment sub create --location westus2 --template-file ./bicep/main.bicep --parameter userPrincipalId=$(az ad signed-in-user show --query id --output tsv)
 ```
 
-Retrieve a different user's ObjectID:
+If you need to assign a different user permission to the storage blob, find it with:
 ```
 az ad user show --id user_principal_name --query id --output tsv
 ```
 
-Copy the value and fill it in as a parameter when deploying the bicep template:
-```
-az deployment sub create --location westus2 --template-file ./bicep/main.bicep --parameter userPrincipalId='user_principal_name_guid_here'
-```
+If running directly, not via azure functions, copy the values for properties.storageAccountName and properties.storageContainerName from the output and fill in the STORAGE_ACCOUNT and STORAGE_CONTAINER variables in the env.psd1.template file, then rename it to env.psd1.
 
-Copy the values for properties.storageAccountName and properties.storageContainerName from the output and fill in the STORAGE_ACCOUNT and STORAGE_CONTAINER variables in the env.psd1.template file, then rename it to env.psd1.
+Deploy!
+```
+cd function_app && func azure functionapp publish --publish-local-settings && func azure functionapp publish
+```
 
 # App setup
 

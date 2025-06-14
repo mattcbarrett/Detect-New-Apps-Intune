@@ -6,17 +6,28 @@ Import-Module `
   Microsoft.Graph.Authentication, `
   Microsoft.Graph.DeviceManagement
 
-# Import "env" file
-$env = Import-PowerShellDataFile -Path '.\env.psd1'
-$MIN_AGE = $env["MIN_AGE"]
-$EMAIL_FROM = $env["EMAIL_FROM"]
-$EMAIL_TO = $env["EMAIL_TO"]
-$STORAGE_ACCOUNT = $env["STORAGE_ACCOUNT"]
-$STORAGE_CONTAINER = $env["STORAGE_CONTAINER"]
-
 # Import functions
-Import-Module .\BlobStorage.psm1
-Import-Module .\SendEmail.psm1
+Import-Module $PSScriptRoot/BlobStorage.psm1
+Import-Module $PSScriptRoot/SendEmail.psm1
+
+# Import "env" file
+# If statement is how we determine if we're running in an Az function or locally. env.psd1 shouldn't be present in the function deployment package.
+# Local environment and Azure use different syntax.
+$envFileExists = Test-Path -Path '.\env.psd1'
+if ($envFileExists) {
+  $env = Import-PowerShellDataFile -Path '.\env.psd1'
+  $MIN_AGE = $env["MIN_AGE"]
+  $EMAIL_FROM = $env["EMAIL_FROM"]
+  $EMAIL_TO = $env["EMAIL_TO"]
+  $STORAGE_ACCOUNT = $env["STORAGE_ACCOUNT"]
+  $STORAGE_CONTAINER = $env["STORAGE_CONTAINER"]
+} else {
+  $MIN_AGE = $env:MIN_AGE
+  $EMAIL_FROM = $env:EMAIL_FROM
+  $EMAIL_TO = $env:EMAIL_TO
+  $STORAGE_ACCOUNT = $env:STORAGE_ACCOUNT
+  $STORAGE_CONTAINER = $env:STORAGE_CONTAINER
+}
 
 # Define variables
 $date = Get-Date -Format MMddyyyy
@@ -24,9 +35,20 @@ $blobName = "detected_apps_${date}.csv"
 
 try {
   # Connect to MS Graph so we can pull device & software information
-  Connect-MgGraph `
-    -Scopes "DeviceManagementManagedDevices.Read.All, Mail.Send" `
-    -NoWelcome
+  # Perform same check on $envFile to determine if we're running in Azure. Connect-MgGraph command is different if we are.
+  if ($envFileExists) {
+    Connect-MgGraph `
+      -Scopes "DeviceManagementManagedDevices.Read.All, Mail.Send" `
+      -NoWelcome
+  } else {
+    Connect-MgGraph `
+      -NoWelcome `
+      -Identity
+  }
+
+  # List context
+  Write-Host "My MS Graph scopes are: "
+  (Get-MgContext).scopes
 
   # Create a storage context
   $storageContext = New-AzStorageContext `
@@ -156,9 +178,16 @@ try {
   $results = $results | Sort-Object -Property 'Application Name'
   $resultString = $results | Out-String
 
+  # Print results to console
+  Write-Host "Results:`n $resultString"
+
   # Send email notice
   Write-Host "Sending email notice to $EMAIL_TO"
-  Send-Email -From $EMAIL_FROM -To $EMAIL_TO -Subject 'App detections' -Body "$diffDates`n$resultString"
+  Send-Email `
+    -From $EMAIL_FROM `
+    -To $EMAIL_TO `
+    -Subject 'App detections' `
+    -Body "$diffDates`n$resultString"
 
   # Print results to terminal
   Write-Output $results
