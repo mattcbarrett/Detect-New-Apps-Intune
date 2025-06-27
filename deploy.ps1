@@ -11,14 +11,15 @@ $localSettings = @{
   }
 }
 
+# Deployment names from bicep/main.bicep
 $storageDeploymentName = "storageDeployment"
 $functionAppDeploymentName = "functionAppDeployment"
 
 # Login to Azure
-#az login
+Connect-AzAccount
 
 # Fetch current user's id
-$userPrincipalId = az ad signed-in-user show --query id --output tsv
+$userPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Split('.')[0]
 
 # Create the function app's resources in Azure
 $deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.bicep" -userPrincipalId $userPrincipalId
@@ -27,9 +28,21 @@ $deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.b
 $storageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $deployment.Parameters.resourceGroupName.Value -Name $storageDeploymentName).Outputs
 $functionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $deployment.Parameters.resourceGroupName.Value -Name $functionAppDeploymentName).Outputs
 
-# Assign the storage account and container names
+# Assign the storage account and container names to local settings
 $localSettings["Values"]["STORAGE_ACCOUNT"] = $storageOutputs.storageAccountName.Value
 $localSettings["Values"]["STORAGE_CONTAINER"] = $storageOutputs.storageContainerName.Value
+
+# Assign MS Graph permissions to the function app's managed identity
+# See: https://learn.microsoft.com/en-us/graph/permissions-reference
+$msGraphSPN = Get-AzADServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+$msGraphPermissionIds = @(
+  '2f51be20-0bb4-4fed-bf7b-db946066c75e', # DeviceManagementManagedDevices.Read.All
+  'b633e1c5-b582-4048-a93e-9f11b44c7e96' # Mail.Send
+)
+
+foreach ($id in $msGraphPermissionIds) {
+  New-AzADServicePrincipalAppRoleAssignment -ServicePrincipalId $functionAppOutputs.functionAppPrincipalId.Value -ResourceId $msGraphSPN.Id -AppRoleId $id
+}
 
 # Download modules for the function deployment
 New-Item -Path .\function\Modules -ItemType Directory
@@ -64,8 +77,5 @@ ConvertTo-Json -InputObject $localSettings | Out-File -FilePath .\function\local
 # cd to function dir
 Set-Location .\function
 
-# Push local settings
+# Deploy with local settings
 func azure functionapp publish $functionAppOutputs.functionAppName.Value --publish-local-settings
-
-# Deploy
-# func azure functionapp publish $functionAppOutputs.functionAppName.Value
