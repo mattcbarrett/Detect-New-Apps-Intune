@@ -9,7 +9,8 @@ param location string = 'westus2'
 param resourceToken string = substring(toLower(uniqueString(subscription().id, environmentName, location, appName)), 0, 7)
 param resourceGroupName string = '${abbrs.resourcesResourceGroups}${appName}-${resourceToken}-${environmentName}'
 param storageAccountName string = '${abbrs.storageStorageAccounts}${resourceToken}'
-param storageContainerName string = 'detectedapps'
+param storageContainerNameDetectedApps string = 'detectedapps'
+param storageContainerNameNewApps string = 'newapps'
 param functionDeploymentContainerName string = '${abbrs.webSitesFunctions}${appName}-${resourceToken}'
 param userPrincipalId string
 param functionAppName string = '${abbrs.webSitesFunctions}${appName}-${resourceToken}'
@@ -37,7 +38,8 @@ module storage 'storage.bicep' = {
   scope: resourceGroup
   params: {
     storageAccountName: storageAccountName
-    storageContainerName: storageContainerName
+    storageContainerNameDetectedApps: storageContainerNameDetectedApps
+    storageContainerNameNewApps: storageContainerNameNewApps
     userPrincipalId: userPrincipalId
     location: location
     functionAppPrincipalId: function_app.outputs.functionAppPrincipalId

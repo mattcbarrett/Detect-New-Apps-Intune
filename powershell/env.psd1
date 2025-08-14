@@ -1,7 +1,8 @@
 @{
-  MIN_AGE = 4
   EMAIL_FROM = "email@domain.tld"
   EMAIL_TO = "email@domain.tld"
-  STORAGE_ACCOUNT = "storage_acct_name"
-  STORAGE_CONTAINER = "storage_container_name"
+  STORAGE_ACCOUNT = "stib4gemz"
+  STORAGE_CONTAINER_DETECTED_APPS = "detectedapps"
+  STORAGE_CONTAINER_NEW_APPS = "newapps"
+  REPORT_DAY_OF_WEEK = "Monday"
 }

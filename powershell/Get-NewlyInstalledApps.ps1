@@ -1,4 +1,6 @@
-# Import modules
+###############
+### Modules ###
+###############
 Import-Module `
   Az.Accounts, `
   Az.Resources, `
@@ -6,37 +8,52 @@ Import-Module `
   Microsoft.Graph.Authentication, `
   Microsoft.Graph.DeviceManagement
 
-# Import functions
+
+##########################
+### Imported Functions ###
+##########################
 Import-Module $PSScriptRoot/BlobStorage.psm1
 Import-Module $PSScriptRoot/SendEmail.psm1
 
-# Import "env" file
-# If statement is how we determine if we're running in an Az function or locally. env.psd1 shouldn't be present in the function deployment package.
+
+#############################
+### Environment Variables ###
+#############################
+# If statement is how we determine if we're running in an Az function or locally,
+# env.psd1 shouldn't be present in the function deployment package.
 # Local environment and Azure use different syntax.
-$envFileExists = Test-Path -Path '.\env.psd1'
-if ($envFileExists) {
+$EnvFile = Test-Path -Path '.\env.psd1'
+
+if ($EnvFile) {
   $env = Import-PowerShellDataFile -Path '.\env.psd1'
-  $MIN_AGE = $env["MIN_AGE"]
   $EMAIL_FROM = $env["EMAIL_FROM"]
   $EMAIL_TO = $env["EMAIL_TO"]
   $STORAGE_ACCOUNT = $env["STORAGE_ACCOUNT"]
-  $STORAGE_CONTAINER = $env["STORAGE_CONTAINER"]
+  $STORAGE_CONTAINER_DETECTED_APPS = $env["STORAGE_CONTAINER_DETECTED_APPS"]
+  $STORAGE_CONTAINER_NEW_APPS = $env["STORAGE_CONTAINER_NEW_APPS"]
+  $REPORT_DAY_OF_WEEK = $env["REPORT_DAY_OF_WEEK"]
 } else {
-  $MIN_AGE = $env:MIN_AGE
   $EMAIL_FROM = $env:EMAIL_FROM
   $EMAIL_TO = $env:EMAIL_TO
   $STORAGE_ACCOUNT = $env:STORAGE_ACCOUNT
-  $STORAGE_CONTAINER = $env:STORAGE_CONTAINER
+  $STORAGE_CONTAINER_DETECTED_APPS = $env:STORAGE_CONTAINER_DETECTED_APPS
+  $STORAGE_CONTAINER_NEW_APPS = $env:STORAGE_CONTAINER_NEW_APPS
+  $REPORT_DAY_OF_WEEK = $env:REPORT_DAY_OF_WEEK
 }
 
-# Define variables
-$date = Get-Date -Format MMddyyyy
-$blobName = "detected_apps_${date}.csv"
+
+#################
+### Constants ###
+################# 
+$Date = Get-Date -Format MMddyyyy
+$BlobNameDetectedApps = "detected_apps_${Date}.csv"
+$BlobNameNewApps = "new_apps_${Date}.csv"
+
 
 try {
-  # Connect to MS Graph so we can pull device & software information
-  # Perform same check on $envFile to determine if we're running in Azure. Connect-MgGraph command is different if we are.
-  if ($envFileExists) {
+  # Perform same check on $envFile to determine if we're running in Azure. 
+  # Connect-MgGraph command is different if we are.
+  if ($EnvFile) {
     Connect-MgGraph `
       -Scopes "DeviceManagementManagedDevices.Read.All, Mail.Send" `
       -NoWelcome
@@ -44,154 +61,120 @@ try {
     Connect-MgGraph `
       -NoWelcome `
       -Identity
+
+    Write-Host "My MS Graph scopes are: " (Get-MgContext).scopes
   }
 
-  # List context
-  Write-Host "My MS Graph scopes are: "
-  (Get-MgContext).scopes
-
-  # Create a storage context
-  $storageContext = New-AzStorageContext `
+  $StorageContext = New-AzStorageContext `
     -StorageAccountName $STORAGE_ACCOUNT `
     -UseConnectedAccount
 
-  # Fetch detected apps from Intune
   Write-Host "Retrieving detected apps from Intune."
-  $mgGraphDetectedApps = Get-MgDeviceManagementDetectedApp -All
 
-  # Error handling
-  if ($mgGraphDetectedApps.length -eq 0) {
+  $DetectedApps = Get-MgDeviceManagementDetectedApp -All
+
+  if ($DetectedApps.length -eq 0) {
     Write-Host "No detected apps found. Output will be blank."
   }
 
-  # Empty array for results
-  $currentDetectedApps = @()
+  $FilteredApps = @()
 
-  # MS Store/UWP apps seem to have 64 char Ids, while Win32/Msi/Msix app Ids seem to be 44 chars. Lose the if statement below or switch to "-gt > 0" to return ALL apps.
-  foreach ($app in $mgGraphDetectedApps) {
-    if ($app.Id.length -eq 44) {
-      $currentDetectedApps += [PSCustomObject]@{
-        "Id" = $app.Id
-        "DisplayName" = $app.DisplayName
-        "Publsher" = $app.Publisher
-        "Version" = $app.Version
+  foreach ($App in $DetectedApps) {
+    # MS Store/Universal Windows Platform apps seem to have 64 char Ids, while Win32/Msi/Msix app Ids seem to be 44 chars.
+    if ($App.Id.length -eq 44) {
+      $FilteredApps += [PSCustomObject]@{
+        "Id" = $App.Id
+        "DisplayName" = $App.DisplayName
+        "Publsher" = $App.Publisher
+        "Version" = $App.Version
       }
     }
   }
 
-  # Sort by name
-  $currentDetectedApps = $currentDetectedApps | Sort-Object -Property DisplayName
+  Save-CSVToBlob `
+    -StorageContext $StorageContext `
+    -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
+    -BlobName $BlobNameDetectedApps `
+    -Data $FilteredApps
 
-  # Write current list of apps to storage for next run
-  $body = ($currentDetectedApps | ConvertTo-Csv -NoTypeInformation) -join "`n"
+  $PreviousDetectedApps = Get-CSVFromContainer `
+    -StorageContext $StorageContext `
+    -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
+    -MostRecent
 
-  $writeResult = Write-Blob `
-    -storageContext $storageContext `
-    -storageContainer $STORAGE_CONTAINER `
-    -blobName $blobName `
-    -body $body `
-    -ContentType "text/csv;charset=utf-8"
+  # Compare current Intune output to previous
+  Write-Host "Comparing current detected apps with previous list..."
+  $Diff = Compare-Object -ReferenceObject $PreviousDetectedApps -DifferenceObject $FilteredApps -Property DisplayName -PassThru
 
-  if ($writeResult.StatusCode -eq "201") {
-    Write-Host "Saved detected apps to $STORAGE_CONTAINER\$blobName."
+  if ($Diff) {
+    Save-CSVToBlob `
+      -StorageContext $StorageContext `
+      -ContainerName $STORAGE_CONTAINER_NEW_APPS `
+      -BlobName $BlobNameNewApps `
+      -Data $Diff
   } else {
-    throw "Unable to save detected apps to $STORAGE_CONTAINER\$blobName."
+    Write-Host "No new applications found, skipping upload to blob storage."
   }
 
-  # Now we retrieve a list from a prior run from Azure Storage.
-  # Start by listing all blobs in the container
-  Write-Host "Retrieving previously detected apps from blob storage. Filtering for files older than $MIN_AGE days."
-  $xml = Get-Blobs -storageContext $storageContext -storageContainer $STORAGE_CONTAINER
-  $blobs = $xml.enumerationResults.blobs.blob
+  # If it's $REPORT_DAY_OF_WEEK, grab the last week's worth of diffs and send the report
+  if ((Get-Date).DayOfWeek -eq $REPORT_DAY_OF_WEEK) {
 
-  $filteredBlobs = @()
+    $NewApps = Get-CSVFromContainer `
+      -StorageContext $StorageContext `
+      -ContainerName $STORAGE_CONTAINER_NEW_APPS `
+      -WithinLastDays 7
 
-  foreach ($blob in $blobs) {
-    # Cast the blob's Creation-Time property from string to DateTime
-    [DateTime]$creationTime = $blob.properties.'Creation-Time'
-    $today = Get-Date
+    # Remove duplicate apps
+    $NewApps = $NewApps | Sort-Object Id -Unique
 
-    # Filter blobs <= $MIN_AGE
-    if ($creationTime -le $today.AddDays(-$MIN_AGE)) {
-      $filteredBlobs += [PSCustomObject]@{
-        "Name" = $blob.Name
-        "Creation-Time" = $creationTime
+    if ($NewApps.length -eq 0) {
+      Write-Output "No new applications found in the last 7 days."
+      
+      Send-Email `
+        -From $EMAIL_FROM `
+        -To $EMAIL_TO `
+        -Subject 'App detections' `
+        -Body "No new applications found in the last 7 days."
+      
+      exit 0
+    }
+
+    # Create list of new & removed apps
+    $Results = @()
+
+    foreach ($Item in $NewApps) {
+      if ($Item.SideIndicator -eq '=>') {  # Filter new apps only
+
+        # Get the devices that have the newly detected app installed
+        $Devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $item.Id).DeviceName -Join ", "
+
+        # Add results to array
+        $Results += [PSCustomObject]@{
+          "Application Name" = $Item.DisplayName
+          "Device(s)" = $Devices
+        }
       }
     }
+
+    # Sort results by app name
+    $Results = $Results | Sort-Object -Property 'Application Name'
+    $ResultString = $Results | Out-String
+
+    # Print results to console
+    Write-Host "`nResults:`n $ResultString"
+
+    # Send email notice
+    Write-Host "Sending email notice to $EMAIL_TO"
+    Send-Email `
+      -From $EMAIL_FROM `
+      -To $EMAIL_TO `
+      -Subject 'App detections' `
+      -Body "$DiffDates`n$ResultString"
+
+    # Print results to terminal
+    Write-Output $Results
+    exit 0
   }
-
-  # Error handling
-  if ($filteredBlobs.length -eq 0) {
-    throw "No blobs found older than $MIN_AGE days. Try adjusting the MIN_AGE variable."
-  }
-
-  $filteredBlobs = $filteredBlobs | Sort-Object -Property 'Creation-Time' -Descending
-
-  $latestBlob = $filteredBlobs[0]
-
-  Write-Host "Selected file $($latestBlob.name)."
-
-  # Retrieve the CSV from storage blob
-  $previousDetectedApps = Read-Blob `
-    -storageContext $storageContext `
-    -storageContainer $STORAGE_CONTAINER `
-    -blobName $latestBlob.Name
-
-  if ($previousDetectedApps) {
-    Write-Host "Retrieved file $($latestBlob.name)."
-  } else {
-    throw "Retrieving file $($latestBlob.name) failed."
-  }
-
-  # Convert from csv to powershell object
-  $previousDetectedApps = $previousDetectedApps | ConvertFrom-Csv
-
-  # Create the diff
-  $diffDates = "Generated diff between apps detected on $($latestBlob.'Creation-Time') and $(Get-Date)."
-  Write-Host $diffDates
-
-  # diffit!
-  $diff = Compare-Object `
-    -ReferenceObject $previousDetectedApps `
-    -DifferenceObject $currentDetectedApps `
-    -Property DisplayName `
-    -PassThru
-
-  # Create list of new & removed apps for $interval
-  $results = @()
-
-  foreach ($item in $diff) {
-    if ($item.SideIndicator -eq '=>') {  # Filter new apps only
-
-      # Get the devices that have the newly detected app installed
-      $devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $item.Id).DeviceName -Join ", "
-
-      # Add results to array
-      $results += [PSCustomObject]@{
-        "Application Name" = $item.DisplayName
-        "Device(s)" = $devices
-      }
-    }
-  }
-
-  # Sort results by app name
-  $results = $results | Sort-Object -Property 'Application Name'
-  $resultString = $results | Out-String
-
-  # Print results to console
-  Write-Host "Results:`n $resultString"
-
-  # Send email notice
-  Write-Host "Sending email notice to $EMAIL_TO"
-  Send-Email `
-    -From $EMAIL_FROM `
-    -To $EMAIL_TO `
-    -Subject 'App detections' `
-    -Body "$diffDates`n$resultString"
-
-  # Print results to terminal
-  Write-Output $results
-  exit 0
 }
 catch {
   Write-Output $_

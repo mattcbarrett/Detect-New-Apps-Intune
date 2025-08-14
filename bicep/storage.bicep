@@ -1,5 +1,6 @@
 param storageAccountName string
-param storageContainerName string
+param storageContainerNameDetectedApps string
+param storageContainerNameNewApps string
 param userPrincipalId string
 param location string
 param functionAppPrincipalId string
@@ -24,9 +25,17 @@ resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2022-09-01'
   name: 'default'
 }
 
-resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2022-09-01' = {
+resource storageContainerDetectedApps 'Microsoft.Storage/storageAccounts/blobServices/containers@2022-09-01' = {
   parent: blobService
-  name: storageContainerName
+  name: storageContainerNameDetectedApps
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
+resource storageContainerNewApps 'Microsoft.Storage/storageAccounts/blobServices/containers@2022-09-01' = {
+  parent: blobService
+  name: storageContainerNameNewApps
   properties: {
     publicAccess: 'None'
   }
@@ -80,4 +89,5 @@ resource roleAssignmentFunctionAppManagedId 'Microsoft.Authorization/roleAssignm
 }
 
 output storageAccountName string = storageAccount.name
-output storageContainerName string = storageContainer.name
+output storageContainerNameDetectedApps string = storageContainerDetectedApps.name
+output storageContainerNameNewApps string = storageContainerNewApps.name

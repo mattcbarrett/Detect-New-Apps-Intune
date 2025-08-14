@@ -3,17 +3,21 @@ $localSettings = @{
   Values = @{
     FUNCTIONS_WORKER_RUNTIME = "powershell"
     FUNCTIONS_WORKER_RUNTIME_VERSION = "7.4"
-    MIN_AGE = 4
     EMAIL_FROM = ""
     EMAIL_TO = ""
     STORAGE_ACCOUNT = ""
     STORAGE_CONTAINER = ""
+    REPORT_DAY_OF_WEEK = "Monday"
   }
 }
 
 # Deployment names from bicep/main.bicep
 $storageDeploymentName = "storageDeployment"
 $functionAppDeploymentName = "functionAppDeployment"
+
+# Install necessary modules
+winget install -e --id Microsoft.Bicep
+Install-Module Az.Accounts, Az.Resources
 
 # Login to Azure
 Connect-AzAccount
@@ -30,7 +34,8 @@ $functionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $deploym
 
 # Assign the storage account and container names to local settings
 $localSettings["Values"]["STORAGE_ACCOUNT"] = $storageOutputs.storageAccountName.Value
-$localSettings["Values"]["STORAGE_CONTAINER"] = $storageOutputs.storageContainerName.Value
+$localSettings["Values"]["STORAGE_CONTAINER_DETECTED_APPS"] = $storageOutputs.storageContainerNameDetectedApps.Value
+$localSettings["Values"]["STORAGE_CONTAINER_NEW_APPS"] = $storageOutputs.storageContainerNameNewApps.Value
 
 # Assign MS Graph permissions to the function app's managed identity
 # See: https://learn.microsoft.com/en-us/graph/permissions-reference
@@ -52,8 +57,8 @@ Save-Module -Name Az.Accounts, Az.Resources, Az.Storage, Microsoft.Graph.Authent
 Copy-Item .\powershell\Get-NewlyInstalledApps.ps1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
 
 # Collect environment variables from the user
-Write-Host "Enter the delta, in days, to report app detections for. Default: 4 days."
-$minAge = Read-Host -Prompt "Days"
+Write-Host "What day of the week should the new app report be sent on? Default: Monday"
+$dayOfWeek = Read-Host -Prompt "Day of week"
 Write-Host ""
 
 # Write-Host "Enter the email address of the account to send notices from. Must have an Exchange license."
@@ -65,8 +70,8 @@ $emailTo = Read-Host -Prompt "Email To"
 Write-Host ""
 
 # Write vars into hashtable
-if ($minAge) {
-  $localSettings["Values"]["MIN_AGE"] = $minAge
+if ($dayOfWeek) {
+  $localSettings["Values"]["REPORT_DAY_OF_WEEK"] = $dayOfWeek
 }
 $localSettings["Values"]["EMAIL_FROM"] = $emailFrom
 $localSettings["Values"]["EMAIL_TO"] = $emailTo
@@ -78,4 +83,5 @@ ConvertTo-Json -InputObject $localSettings | Out-File -FilePath .\function\local
 Set-Location .\function
 
 # Deploy with local settings
+# Core Tools can be buggy with authentication. If it fails, try using Azure CLI's "az login" command and re-run the below.
 func azure functionapp publish $functionAppOutputs.functionAppName.Value --publish-local-settings
