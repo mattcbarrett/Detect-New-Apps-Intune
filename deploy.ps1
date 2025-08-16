@@ -1,4 +1,4 @@
-$localSettings = @{
+$LocalSettings = @{
   IsEncrypted = $false
   Values = @{
     FUNCTIONS_WORKER_RUNTIME = "powershell"
@@ -6,47 +6,50 @@ $localSettings = @{
     EMAIL_FROM = ""
     EMAIL_TO = ""
     STORAGE_ACCOUNT = ""
-    STORAGE_CONTAINER = ""
+    STORAGE_CONTAINER_DETECTED_APPS = ""
+    STORAGE_CONTAINER_NEW_APPS = ""
     REPORT_DAY_OF_WEEK = "Monday"
+    DAYS_TO_AGGREGATE = 7
+    RETENTION_PERIOD = 14
   }
 }
 
 # Deployment names from bicep/main.bicep
-$storageDeploymentName = "storageDeployment"
-$functionAppDeploymentName = "functionAppDeployment"
+$StorageDeploymentName = "storageDeployment"
+$FunctionAppDeploymentName = "functionAppDeployment"
 
 # Install necessary modules
 winget install -e --id Microsoft.Bicep
 Install-Module Az.Accounts, Az.Resources
 
 # Login to Azure
-Connect-AzAccount
+Connect-AzAccount -AuthScope MicrosoftGraphEndpointResourceId
 
 # Fetch current user's id
-$userPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Split('.')[0]
+$UserPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Split('.')[0]
 
 # Create the function app's resources in Azure
-$deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.bicep" -userPrincipalId $userPrincipalId
+$Deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.bicep" -userPrincipalId $UserPrincipalId
 
 # Retrieve outputs from the deployment
-$storageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $deployment.Parameters.resourceGroupName.Value -Name $storageDeploymentName).Outputs
-$functionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $deployment.Parameters.resourceGroupName.Value -Name $functionAppDeploymentName).Outputs
+$StorageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $StorageDeploymentName).Outputs
+$FunctionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $FunctionAppDeploymentName).Outputs
 
 # Assign the storage account and container names to local settings
-$localSettings["Values"]["STORAGE_ACCOUNT"] = $storageOutputs.storageAccountName.Value
-$localSettings["Values"]["STORAGE_CONTAINER_DETECTED_APPS"] = $storageOutputs.storageContainerNameDetectedApps.Value
-$localSettings["Values"]["STORAGE_CONTAINER_NEW_APPS"] = $storageOutputs.storageContainerNameNewApps.Value
+$LocalSettings["Values"]["STORAGE_ACCOUNT"] = $StorageOutputs.storageAccountName.Value
+$LocalSettings["Values"]["STORAGE_CONTAINER_DETECTED_APPS"] = $StorageOutputs.storageContainerNameDetectedApps.Value
+$LocalSettings["Values"]["STORAGE_CONTAINER_NEW_APPS"] = $StorageOutputs.storageContainerNameNewApps.Value
 
 # Assign MS Graph permissions to the function app's managed identity
 # See: https://learn.microsoft.com/en-us/graph/permissions-reference
-$msGraphSPN = Get-AzADServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
-$msGraphPermissionIds = @(
+$MSGraphSPN = Get-AzADServicePrincipal -Filter "appId eq '00000003-0000-0000-c000-000000000000'"
+$MSGraphPermissionIds = @(
   '2f51be20-0bb4-4fed-bf7b-db946066c75e', # DeviceManagementManagedDevices.Read.All
   'b633e1c5-b582-4048-a93e-9f11b44c7e96' # Mail.Send
 )
 
-foreach ($id in $msGraphPermissionIds) {
-  New-AzADServicePrincipalAppRoleAssignment -ServicePrincipalId $functionAppOutputs.functionAppPrincipalId.Value -ResourceId $msGraphSPN.Id -AppRoleId $id
+foreach ($id in $MSGraphPermissionIds) {
+  New-AzADServicePrincipalAppRoleAssignment -ServicePrincipalId $FunctionAppOutputs.functionAppPrincipalId.Value -ResourceId $MSGraphSPN.Id -AppRoleId $id
 }
 
 # Download modules for the function deployment
@@ -58,30 +61,83 @@ Copy-Item .\powershell\Get-NewlyInstalledApps.ps1, .\powershell\BlobStorage.psm1
 
 # Collect environment variables from the user
 Write-Host "What day of the week should the new app report be sent on? Default: Monday"
-$dayOfWeek = Read-Host -Prompt "Day of week"
+
+do {
+  $DayOfWeek = Read-Host -Prompt "Day of week"
+  Write-Host ""
+
+  if (!$DayOfWeek) {
+    break
+
+  } elseif ($DayOfWeek -match "^[a-zA-Z]+$") {
+    $LocalSettings["Values"]["REPORT_DAY_OF_WEEK"] = $DayOfWeek
+    
+    break
+
+  } else {
+    Write-Host "ERROR: Input value must be a day of the week!" -ForegroundColor Red
+
+  }
+} while ($true)
+
+# Collect environment variables from the user
+Write-Host "How many days of history should the report aggregate? Default: 7"
+
+do {
+  $DaysToAggregate = Read-Host -Prompt "Days"
+  Write-Host ""
+
+  if (!$DaysToAggregate) {
+    break
+
+  } elseif ([int]::TryParse($DaysToAggregate, [ref]$null)) {
+    $LocalSettings["Values"]["DAYS_TO_AGGREGATE"] = $DaysToAggregate
+    
+    break
+
+  } else {
+    Write-Host "ERROR: Input value must be an integer!" -ForegroundColor Red
+
+  }
+} while ($true)
+
+# Collect environment variables from the user
+Write-Host "How many days of history should the system retain? Files older than this will be pruned. Default: 14"
+
+do {
+  $RetentionPeriod = Read-Host -Prompt "Retention period"
+  Write-Host ""
+
+  if (!$RetentionPeriod) {
+    break
+
+  } elseif ([int]::TryParse($RetentionPeriod, [ref]$null)) {
+    $LocalSettings["Values"]["RETENTION_PERIOD"] = $RetentionPeriod
+
+  } else {
+    Write-Host "ERROR: Input value must be an integer!" -ForegroundColor Red
+
+  }
+} while ($true)
+
+Write-Host "Enter the email address of an account to send notices from. Must have an Exchange license."
+$EmailFrom = Read-Host -Prompt "Email From"
 Write-Host ""
 
-# Write-Host "Enter the email address of the account to send notices from. Must have an Exchange license."
-$emailFrom = Read-Host -Prompt "Email From"
+$LocalSettings["Values"]["EMAIL_FROM"] = $EmailFrom
+
+Write-Host "Enter an email address to send notices to."
+$EmailTo = Read-Host -Prompt "Email To"
 Write-Host ""
 
-# Write-Host "Enter the email address to send notices to."
-$emailTo = Read-Host -Prompt "Email To"
-Write-Host ""
-
-# Write vars into hashtable
-if ($dayOfWeek) {
-  $localSettings["Values"]["REPORT_DAY_OF_WEEK"] = $dayOfWeek
-}
-$localSettings["Values"]["EMAIL_FROM"] = $emailFrom
-$localSettings["Values"]["EMAIL_TO"] = $emailTo
+$LocalSettings["Values"]["EMAIL_TO"] = $EmailTo
 
 # Write hashtable to json
-ConvertTo-Json -InputObject $localSettings | Out-File -FilePath .\function\local.settings.json
+ConvertTo-Json -InputObject $LocalSettings | Out-File -FilePath .\function\local.settings.json
 
 # cd to function dir
 Set-Location .\function
 
 # Deploy with local settings
 # Core Tools can be buggy with authentication. If it fails, try using Azure CLI's "az login" command and re-run the below.
-func azure functionapp publish $functionAppOutputs.functionAppName.Value --publish-local-settings
+func azure functionapp publish $FunctionAppOutputs.functionAppName.Value --publish-local-settings

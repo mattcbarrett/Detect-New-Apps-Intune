@@ -1,9 +1,9 @@
 function Send-Email {
   param (
-      [string]$From,
-      [string]$To,
-      [string]$Subject,
-      [string]$Body
+      [Parameter(Mandatory=$true)][string]$From,
+      [Parameter(Mandatory=$true)][string]$To,
+      [Parameter(Mandatory=$true)][string]$Subject,
+      [Parameter(Mandatory=$true)][string]$Body
   )
   
   $email = @{
@@ -25,7 +25,11 @@ function Send-Email {
   }
   
   $uri = "https://graph.microsoft.com/v1.0/users/$From/sendMail"
-  Invoke-MgGraphRequest -Uri $uri -Headers $headers -Method Post -Body ($email | ConvertTo-Json -Depth 10)
+  Invoke-MgGraphRequest `
+    -Uri $uri `
+    -Headers $headers `
+    -Method Post `
+    -Body ($email | ConvertTo-Json -Depth 10)
 }
 
 Export-ModuleMember -Function Send-Email

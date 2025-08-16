@@ -19,9 +19,9 @@ Import-Module $PSScriptRoot/SendEmail.psm1
 #############################
 ### Environment Variables ###
 #############################
-# If statement is how we determine if we're running in an Az function or locally,
-# env.psd1 shouldn't be present in the function deployment package.
-# Local environment and Azure use different syntax.
+# This is how we determine if code is executing in an Azure function, or locally.
+# env.psd1 isn't copied in the function deployment package.
+# This is block is necessary because Azure uses PSDrive syntax to access environmen variables.
 $EnvFile = Test-Path -Path '.\env.psd1'
 
 if ($EnvFile) {
@@ -32,6 +32,9 @@ if ($EnvFile) {
   $STORAGE_CONTAINER_DETECTED_APPS = $env["STORAGE_CONTAINER_DETECTED_APPS"]
   $STORAGE_CONTAINER_NEW_APPS = $env["STORAGE_CONTAINER_NEW_APPS"]
   $REPORT_DAY_OF_WEEK = $env["REPORT_DAY_OF_WEEK"]
+  $DAYS_TO_AGGREGATE = $env["DAYS_TO_AGGREGATE"]
+  $RETENTION_PERIOD = $env["RETENTION_PERIOD"]
+
 } else {
   $EMAIL_FROM = $env:EMAIL_FROM
   $EMAIL_TO = $env:EMAIL_TO
@@ -39,6 +42,9 @@ if ($EnvFile) {
   $STORAGE_CONTAINER_DETECTED_APPS = $env:STORAGE_CONTAINER_DETECTED_APPS
   $STORAGE_CONTAINER_NEW_APPS = $env:STORAGE_CONTAINER_NEW_APPS
   $REPORT_DAY_OF_WEEK = $env:REPORT_DAY_OF_WEEK
+  $DAYS_TO_AGGREGATE = $env:DAYS_TO_AGGREGATE
+  $RETENTION_PERIOD = $env:RETENTION_PERIOD
+
 }
 
 
@@ -57,12 +63,14 @@ try {
     Connect-MgGraph `
       -Scopes "DeviceManagementManagedDevices.Read.All, Mail.Send" `
       -NoWelcome
+
   } else {
     Connect-MgGraph `
       -NoWelcome `
       -Identity
 
     Write-Host "My MS Graph scopes are: " (Get-MgContext).scopes
+
   }
 
   $StorageContext = New-AzStorageContext `
@@ -75,12 +83,14 @@ try {
 
   if ($DetectedApps.length -eq 0) {
     Write-Host "No detected apps found. Output will be blank."
+    
   }
 
   $FilteredApps = @()
 
   foreach ($App in $DetectedApps) {
-    # MS Store/Universal Windows Platform apps seem to have 64 char Ids, while Win32/Msi/Msix app Ids seem to be 44 chars.
+    # Win32/Msi/Msix app IDs are 44 characters long, 
+    # MS Store/Universal Windows Platform apps have 64 character IDs.
     if ($App.Id.length -eq 44) {
       $FilteredApps += [PSCustomObject]@{
         "Id" = $App.Id
@@ -102,9 +112,18 @@ try {
     -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
     -MostRecent
 
-  # Compare current Intune output to previous
+  if (!$PreviousDetectedApps) {
+    Write-Host "No previous apps found, unable to generate diff. Exiting..." -ForegroundColor Red
+    exit 1
+  }
+  # Compare current Intune output to saved output from prior run
   Write-Host "Comparing current detected apps with previous list..."
-  $Diff = Compare-Object -ReferenceObject $PreviousDetectedApps -DifferenceObject $FilteredApps -Property DisplayName -PassThru
+
+  $Diff = Compare-Object `
+    -ReferenceObject $PreviousDetectedApps `
+    -DifferenceObject $FilteredApps `
+    -Property DisplayName `
+    -PassThru
 
   if ($Diff) {
     Save-CSVToBlob `
@@ -112,8 +131,10 @@ try {
       -ContainerName $STORAGE_CONTAINER_NEW_APPS `
       -BlobName $BlobNameNewApps `
       -Data $Diff
+
   } else {
     Write-Host "No new applications found, skipping upload to blob storage."
+
   }
 
   # If it's $REPORT_DAY_OF_WEEK, grab the last week's worth of diffs and send the report
@@ -122,61 +143,64 @@ try {
     $NewApps = Get-CSVFromContainer `
       -StorageContext $StorageContext `
       -ContainerName $STORAGE_CONTAINER_NEW_APPS `
-      -WithinLastDays 7
+      -WithinLastDays $DAYS_TO_AGGREGATE
 
     # Remove duplicate apps
     $NewApps = $NewApps | Sort-Object Id -Unique
 
     if ($NewApps.length -eq 0) {
-      Write-Output "No new applications found in the last 7 days."
+      Write-Output "No new applications found in the last $DAYS_TO_AGGREGATE days."
       
       Send-Email `
         -From $EMAIL_FROM `
         -To $EMAIL_TO `
         -Subject 'App detections' `
-        -Body "No new applications found in the last 7 days."
+        -Body "No new applications found in the last $DAYS_TO_AGGREGATE days."
       
       exit 0
+
     }
 
-    # Create list of new & removed apps
     $Results = @()
 
-    foreach ($Item in $NewApps) {
-      if ($Item.SideIndicator -eq '=>') {  # Filter new apps only
+    foreach ($App in $NewApps) {
+      if ($App.SideIndicator -eq '=>') {  # Filter new apps only
+        $Devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id).DeviceName -Join ", "
 
-        # Get the devices that have the newly detected app installed
-        $Devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $item.Id).DeviceName -Join ", "
-
-        # Add results to array
         $Results += [PSCustomObject]@{
-          "Application Name" = $Item.DisplayName
+          "Application Name" = $App.DisplayName
           "Device(s)" = $Devices
         }
       }
     }
 
-    # Sort results by app name
+    # Sort results & format so output isn't truncated
     $Results = $Results | Sort-Object -Property 'Application Name'
-    $ResultString = $Results | Out-String
 
-    # Print results to console
+    $ResultString = $Results | Format-List -Property 'Application Name', 'Device(s)' | Out-String
+
     Write-Host "`nResults:`n $ResultString"
 
-    # Send email notice
     Write-Host "Sending email notice to $EMAIL_TO"
+
     Send-Email `
       -From $EMAIL_FROM `
       -To $EMAIL_TO `
       -Subject 'App detections' `
-      -Body "$DiffDates`n$ResultString"
+      -Body $ResultString
 
-    # Print results to terminal
     Write-Output $Results
+
+    # Cleanup
+    Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_DETECTED_APPS -OlderThanDays $RETENTION_PERIOD
+    Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_NEW_APPS -OlderThanDays $RETENTION_PERIOD
+
     exit 0
+
   }
-}
-catch {
+} catch {
   Write-Output $_
+
   exit 1
+
 }

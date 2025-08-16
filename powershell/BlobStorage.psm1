@@ -1,71 +1,134 @@
 function Get-Blobs {
   param(
-    $storageContext,
-    [string]$storageContainer
+    [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory=$true)][string]$StorageContainer
   )
 
-  $sasStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
-  $sasExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
+  $SASStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
+  $SASExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
 
-  $sasTokenFull = (New-AzStorageContainerSASToken -Context $storageContext -Container $storageContainer -Permission "l" -StartTime $sasStart -ExpiryTime $sasExpiry -FullUri) + "&restype=container&comp=list"
+  $SASTokenFull = (New-AzStorageContainerSASToken `
+    -Context $StorageContext `
+    -Container $StorageContainer `
+    -Permission "l" `
+    -StartTime $SASStart `
+    -ExpiryTime $SASExpiry `
+    -FullUri) `
+    + "&restype=container&comp=list"
   
-  $headers = @{ 
+  $Headers = @{ 
     "x-ms-date" = "$(Get-Date)"
   }
   
-  $response = Invoke-RestMethod -Method "GET" -Uri $sasTokenFull -Headers $headers
+  $Response = Invoke-RestMethod `
+    -Method "GET" `
+    -Uri $SASTokenFull `
+    -Headers $Headers
   
-  [xml]$response = ($response).Substring(1)
+  [xml]$Response = ($Response).Substring(1)
 
-  return $response
+  return $Response
 
 }
 
 function Read-Blob {
   param(
-    $storageContext,
-    [string]$storageContainer,
-    [string]$blobName
+    [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory=$true)][string]$StorageContainer,
+    [Parameter(Mandatory=$true)][string]$BlobName
   )
   
-  $sasStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
-  $sasExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
+  $SASStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
+  $SASExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
 
-  $sasTokenFull = New-AzStorageBlobSASToken -Context $storageContext -Container $storageContainer -Blob $blobName -Permission "r" -StartTime $sasStart -ExpiryTime $sasExpiry -FullUri
+  $SASTokenFull = New-AzStorageBlobSASToken `
+    -Context $StorageContext `
+    -Container $StorageContainer `
+    -Blob $BlobName `
+    -Permission "r" `
+    -StartTime $SASStart `
+    -ExpiryTime $SASExpiry `
+    -FullUri
   
-  $headers = @{
+  $Headers = @{
     "x-ms-blob-type" = "BlockBlob"
     "x-ms-date"      = "$(Get-Date)"
   }
   
-  $response = Invoke-RestMethod -Method "GET" -Uri $sasTokenFull -Headers $headers
+  $Response = Invoke-RestMethod `
+    -Method "GET" `
+    -Uri $SASTokenFull `
+    -Headers $Headers
   
-  return $response
+  return $Response
 
 }
 
 function Write-Blob {
   param(
-    $storageContext,
-    [string]$storageContainer,
-    [string]$blobName,
-    [string]$body,
-    [string]$contentType
+    [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory=$true)][string]$StorageContainer,
+    [Parameter(Mandatory=$true)][string]$BlobName,
+    [Parameter(Mandatory=$true)][string]$Body,
+    [Parameter(Mandatory=$true)][string]$ContentType
   )
   
-  $sasStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
-  $sasExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
+  $SASStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
+  $SASExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
 
-  $sasTokenFull = New-AzStorageBlobSASToken -Context $storageContext -Container $storageContainer -Blob $blobName -Permission "w" -StartTime $sasStart -ExpiryTime $sasExpiry -FullUri
+  $SASTokenFull = New-AzStorageBlobSASToken `
+    -Context $StorageContext `
+    -Container $StorageContainer `
+    -Blob $BlobName `
+    -Permission "w" `
+    -StartTime $SASStart `
+    -ExpiryTime $SASExpiry `
+    -FullUri
   
-  $headers = @{
+  $Headers = @{
     "x-ms-blob-type" = "BlockBlob"
     "x-ms-date"      = "$(Get-Date)"
   }
   
-  $response = Invoke-WebRequest -Method "PUT" -Uri $sasTokenFull -Body $body -Headers $headers -ContentType $contentType
+  $Response = Invoke-WebRequest `
+    -Method "PUT" `
+    -Uri $SASTokenFull `
+    -Body $Body `
+    -Headers $Headers `
+    -ContentType $ContentType
 
-  return $response
+  return $Response
+}
+
+function Remove-Blob {
+  param(
+    [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory=$true)][string]$StorageContainer,
+    [Parameter(Mandatory=$true)][string]$BlobName
+  )
+  
+  $SASStart = (Get-Date).AddSeconds(-15).ToUniversalTime() #allow for clock drift
+  $SASExpiry = (Get-Date).AddSeconds(15).ToUniversalTime()
+
+  $SASTokenFull = New-AzStorageBlobSASToken `
+    -Context $StorageContext `
+    -Container $StorageContainer `
+    -Blob $BlobName `
+    -Permission "d" `
+    -StartTime $SASStart `
+    -ExpiryTime $SASExpiry `
+    -FullUri
+  
+  $Headers = @{
+    "x-ms-date"      = "$(Get-Date)"
+  }
+  
+  $Response = Invoke-WebRequest `
+    -Method "DELETE" `
+    -Uri $SASTokenFull `
+    -Headers $Headers
+
+  return $Response
 }
 
 function Save-CSVToBlob {
@@ -81,10 +144,10 @@ function Save-CSVToBlob {
   $Body = ($Data | ConvertTo-Csv -NoTypeInformation) -join "`n"
 
   $Result = Write-Blob `
-    -storageContext $StorageContext `
-    -storageContainer $ContainerName `
-    -blobName $BlobName `
-    -body $Body `
+    -StorageContext $StorageContext `
+    -StorageContainer $ContainerName `
+    -BlobName $BlobName `
+    -Body $Body `
     -ContentType "text/csv;charset=utf-8"
 
   if ($Result.StatusCode -eq "201") {
@@ -99,7 +162,7 @@ function Get-CSVFromContainer {
     [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
     [Parameter(Mandatory=$true)][String]$ContainerName,
     [Parameter(Mandatory=$false)][Switch]$MostRecent,
-    [Parameter(Mandatory=$false)][sbyte]$WithinLastDays
+    [Parameter(Mandatory=$false)][int]$WithinLastDays
   )
 
   if (!$MostRecent -and !$WithinLastDays) {
@@ -112,8 +175,8 @@ function Get-CSVFromContainer {
   $Today = Get-Date
 
   $xml = Get-Blobs `
-    -storageContext $StorageContext `
-    -storageContainer $ContainerName
+    -StorageContext $StorageContext `
+    -StorageContainer $ContainerName
 
   $Blobs = $xml.enumerationResults.blobs.blob
 
@@ -146,9 +209,9 @@ function Get-CSVFromContainer {
     Write-Host "Selected file: $($Blob.Name)."
 
     $Result = Read-Blob `
-      -storageContext $StorageContext `
-      -storageContainer $ContainerName `
-      -blobName $Blob.Name `
+      -StorageContext $StorageContext `
+      -StorageContainer $ContainerName `
+      -BlobName $Blob.Name `
       | ConvertFrom-Csv
 
     if ($Result) {
@@ -183,9 +246,9 @@ function Get-CSVFromContainer {
 
     foreach ($Blob in $PreviousBlobs) {
       $Result = Read-Blob `
-        -storageContext $StorageContext `
-        -storageContainer $ContainerName `
-        -blobName $Blob.Name
+        -StorageContext $StorageContext `
+        -StorageContainer $ContainerName `
+        -BlobName $Blob.Name
 
       if ($Result) {
         Write-Host "Retrieved file $($Blob.name)."
@@ -197,6 +260,42 @@ function Get-CSVFromContainer {
     }
 
     return $CombinedCSV
+  }
+}
+
+function Remove-OldBlobs {
+  param(
+    [Parameter(Mandatory=$true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory=$true)][String]$ContainerName,
+    [Parameter(Mandatory=$true)][int]$OlderThanDays
+  )
+
+  # Flip to a negative integer so .AddDays() subtracts from $Today
+  $OlderThanDays = ($OlderThanDays * -1) 
+
+  $Today = Get-Date
+
+  $xml = Get-Blobs `
+    -StorageContext $StorageContext `
+    -StorageContainer $ContainerName
+
+  $Blobs = $xml.enumerationResults.blobs.blob
+
+  foreach ($Blob in $Blobs) {
+    # Cast the blob's Creation-Time property from string to DateTime
+    [DateTime]$CreationTime = $Blob.properties.'Creation-Time'
+
+    if ($CreationTime -le $Today.AddDays($OlderThanDays)) {
+      $Result = Remove-Blob `
+        -StorageContext $StorageContext `
+        -StorageContainer $ContainerName `
+        -BlobName $Blob.name
+
+      if ($Result) {
+        Write-Host "Pruned blob $($Blob.name) with timestamp $($CreationTime)."
+
+      }
+    }
   }
 }
 
