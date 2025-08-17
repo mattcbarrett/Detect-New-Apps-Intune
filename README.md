@@ -23,5 +23,5 @@ Run deploy.ps1. You will be prompted for configuration variables during script e
 
 # Troubleshooting
 
-Azure Functions Core Tools doesn't always like authenticating via the Azure Powershell SDK. If you get an error from the func publish command, try installing the Azure CLI, authenticating via "az login," and executing the deployment command on line 143 again.
+Azure Functions Core Tools doesn't always like authenticating via the Azure Powershell SDK. If you get an error from the func publish command, try installing the Azure CLI, authenticating via "az login," and executing the func publish command on line 143 of deploy.ps1 again.
 
