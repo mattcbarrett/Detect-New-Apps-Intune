@@ -6,16 +6,16 @@ Detects newly installed applications on your endpoints by using the "Discovered 
 
 deploy.ps1 creates the appropriate resources in Azure and deploys the code to an Azure Function App that's configured with a timer trigger set to 15:00 UTC. The code then:
 
-1. Fetches the Detected apps list for all endpoints with Get-MgDeviceManagementDetectedApp -All.
+1. Fetches the Detected apps list for all endpoints from MS Graph's /deviceManagement/detectedApps endpoint.
 2. Saves the list to CSV in an Azure Storage container.
 3. Retrieves the most recent previous Detected apps list from the same container. The list must be less than or equal to 1 day old.
 4. Generates a diff of the two files. If there are results, save them to a 2nd container in Azure.
-5. If it's $REPORT_DAY_OF_WEEK, fetch the prior $DAYS_TO_AGGREGATE days of diff results. Aggregate them and fetch a list of hostnames for each app with Get-MgDeviceManagementDetectedAppManagedDevice.
+5. If it's $REPORT_DAY_OF_WEEK, fetch the prior $DAYS_TO_AGGREGATE days of diff results. Aggregate them and fetch a list of hostnames for each app from /deviceManagement/detectedApps/$appId/managedDevices.
 6. Email the results and prune CSVs older than $RETENTION_PERIOD.
 
 # Why?
 
-I created this tool to satisfy the CIS 18 control 2.4 "Utilize Automated Software Inventory Tools" by regularly alerting the administrator to apps that are being added to the environment.
+I created this tool to satisfy control 2.4 "Utilize Automated Software Inventory Tools" in the CIS 18 framework. 
 
 # Usage
 
