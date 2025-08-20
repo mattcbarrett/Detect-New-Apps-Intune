@@ -14,16 +14,14 @@ $LocalSettings = @{
   }
 }
 
-# Deployment names from bicep/main.bicep
-$StorageDeploymentName = "storageDeployment"
-$FunctionAppDeploymentName = "functionAppDeployment"
+$Constants = Get-Content ./bicep/constants.json | ConvertFrom-Json
 
 # Install necessary modules
 winget install -e --id Microsoft.Bicep
 Install-Module Az.Accounts, Az.Resources
 
 # Login to Azure
-Connect-AzAccount -AuthScope MicrosoftGraphEndpointResourceId
+Connect-AzAccount
 
 # Fetch current user's id
 $UserPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Split('.')[0]
@@ -32,8 +30,8 @@ $UserPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Spli
 $Deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.bicep" -userPrincipalId $UserPrincipalId
 
 # Retrieve outputs from the deployment
-$StorageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $StorageDeploymentName).Outputs
-$FunctionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $FunctionAppDeploymentName).Outputs
+$StorageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.storageDeploymentName).Outputs
+$FunctionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.functionAppDeploymentName).Outputs
 
 # Assign the storage account and container names to local settings
 $LocalSettings["Values"]["STORAGE_ACCOUNT"] = $StorageOutputs.storageAccountName.Value

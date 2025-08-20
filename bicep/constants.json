@@ -1,0 +1,11 @@
+{
+  "appName": "detect-new-apps",
+  "environmentName": "prod",
+  "location": "westus2",
+  "storageContainerNameDetectedApps": "detectedapps",
+  "storageContainerNameNewApps": "newapps",
+  "logsAnalyticsDeploymentName": "logAnalyticsDeployment",
+  "storageDeploymentName": "storageDeployment",
+  "functionAppDeploymentName": "functionAppDeployment",
+  "rolesDeploymentName": "rolesDeployment"
+}

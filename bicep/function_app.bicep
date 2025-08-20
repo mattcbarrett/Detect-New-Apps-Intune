@@ -17,6 +17,10 @@ param functionDeploymentContainerName string
 
 var appServicePlanName = '${functionAppName}-plan'
 
+resource storageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' existing = {
+  name: storageAccountName
+}
+
 resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
   name: appInsightsName
   location: location
@@ -65,7 +69,7 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       deployment: {
         storage: {
           type: 'blobContainer'
-          value: 'https://${storageAccountName}.blob.core.windows.net/${functionDeploymentContainerName}'
+          value: '${storageAccount.properties.primaryEndpoints.blob}${functionDeploymentContainerName}'
           authentication: {
             type: 'SystemAssignedIdentity'
           }
@@ -97,6 +101,6 @@ resource corsSettings 'Microsoft.Web/sites/config@2022-03-01' = {
   }
 }
 
-output functionAppEndpoint string = 'https://${functionApp.name}.azurewebsites.net'
+output functionAppEndpoint string = 'https://${functionApp.properties.hostNames[0]}'
 output functionAppPrincipalId string = functionApp.identity.principalId
 output functionAppName string = functionApp.name

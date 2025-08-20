@@ -15,7 +15,7 @@ deploy.ps1 creates the appropriate resources in Azure and deploys the code to an
 
 # Why?
 
-I created this tool to satisfy control 2.4 "Utilize Automated Software Inventory Tools" in the CIS 18 framework. 
+I created this tool to satisfy control 2.4 "Utilize Automated Software Inventory Tools" in the CIS 18 framework. I wanted something fairly simple that leverages existing resources to gather data.
 
 # Usage
 
