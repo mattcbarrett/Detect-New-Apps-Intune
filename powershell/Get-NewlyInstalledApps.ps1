@@ -189,8 +189,6 @@ try {
       -Subject 'App detections' `
       -Body $ResultString
 
-    Write-Output $Results
-
     # Cleanup
     Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_DETECTED_APPS -OlderThanDays $RETENTION_PERIOD
     Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_NEW_APPS -OlderThanDays $RETENTION_PERIOD
