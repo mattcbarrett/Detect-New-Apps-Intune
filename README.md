@@ -1,6 +1,6 @@
 # Description
 
-Detects newly installed applications on endpoints joined to Intune and sends a weekly email with the results.
+Detects newly installed applications on Windows endpoints joined to Entra ID and managed by Intune. Sends a weekly email with the results.
 
 # Usage
 
@@ -8,14 +8,14 @@ Run deploy.ps1. You will be prompted for configuration variables during script e
 
 # How does it work?
 
-The Intune Management Extension Agent collects a software inventory every 24 hours and uploads it to Intune. This tool relies on that data to create a differential of the detected apps list every day and write the results to CSV. Once a week, it aggregates those results and sends it in an email.
+The Intune Management Extension collects a software inventory every 24 hours and uploads it to Intune. This tool relies on that data to create a differential of the detected apps list every day and write the results to CSV. Once a week, it aggregates those results and sends it in an email.
 
-The deploy.ps1 script creates the appropriate resources in Azure and deploys the code to a Function App that's configured with a timer trigger set to 15:00 UTC. The code then:
+The deploy.ps1 script creates a storage container and function app in Azure that's configured with a timer trigger set to 15:00 UTC. The code then:
 
 1. Fetches the Detected apps list for all endpoints from MS Graph's /deviceManagement/detectedApps endpoint.
-2. Saves the list to CSV in an Azure Storage container.
+2. Saves the list to a CSV in the storage container.
 3. Retrieves the most recent previous Detected apps list from the same container. The list must be less than or equal to 1 day old.
-4. Generates a diff of the two files. If there are results, save them to a 2nd container in Azure.
+4. Generates a diff of the two files. If there are results, save them to a separate CSV in a separate container.
 5. If it's $REPORT_DAY_OF_WEEK, fetch the prior $DAYS_TO_AGGREGATE days of diff results. Aggregate them and fetch a list of hostnames for each app from /deviceManagement/detectedApps/$appId/managedDevices.
 6. Email the results and prune CSVs older than $RETENTION_PERIOD.
 
