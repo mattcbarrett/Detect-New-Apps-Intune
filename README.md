@@ -27,7 +27,7 @@ NOTE:
 
 The hostnames listed for an app in the weekly aggregate report are **all** hosts with the app intalled. For example: if a host has had VS Code installed for months, and a new host installed it 3 days ago, *both* hostnames will be shown under VS Code in the report.
 
-This is because v1.0 of MS Graph does not provide a detectedApps endpoint at the device level. It only offers one at the tenant level, and the ability to retrieve a list of all devices per app.
+This is because v1.0 of MS Graph does not provide a detectedApps endpoint at the device level, it only offers one at the tenant level.
 
 The MS Graph beta does offer a granular, per-device detectedApps list. This may be something I explore in the future.
 
