@@ -16,9 +16,16 @@ $LocalSettings = @{
 
 $Constants = Get-Content ./bicep/constants.json | ConvertFrom-Json
 
-# Install necessary modules
+# Install necessary apps
 winget install -e --id Microsoft.Bicep
+winget install -e --id Microsoft.Azure.FunctionsCoreTools
+
+# Reload path so they're available in this session
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+# Install & import necessary modules
 Install-Module Az.Accounts, Az.Resources
+Import-Module Az.Accounts, Az.Resources -Force
 
 # Login to Azure
 Connect-AzAccount
