@@ -1,6 +1,10 @@
 # Description
 
-Detects newly installed applications on Windows endpoints joined to Entra ID and managed by Intune. Sends a weekly email with the results.
+Aggregates new detected apps on Windows endpoints joined to Entra ID and managed by Intune. Sends a weekly email with the results.
+
+# Prerequisites
+
+Be sure you have an Azure subscription prior to executing the deployment script.
 
 # Usage
 
@@ -19,11 +23,18 @@ The deploy.ps1 script creates a storage container and function app in Azure that
 5. If it's $REPORT_DAY_OF_WEEK, fetch the prior $DAYS_TO_AGGREGATE days of diff results. Aggregate them and fetch a list of hostnames for each app from /deviceManagement/detectedApps/$appId/managedDevices.
 6. Email the results and prune CSVs older than $RETENTION_PERIOD.
 
+NOTE:
+
+The hostnames listed for an app in the weekly aggregate report are **all** hosts with the app intalled. For example: if a host has had VS Code installed for months, and a new host installed it 3 days ago, *both* hostnames will be shown under VS Code in the report.
+
+This is because v1.0 of MS Graph does not provide a detectedApps endpoint at the device level. It only offers one at the tenant level, and the ability to retrieve a list of all devices per app.
+
+The MS Graph beta does offer a granular, per-device detectedApps list. This may be something I explore in the future.
+
 # Why create this tool?
 
-I wanted a way to satisfy the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" using existing data from Intune. Just a simple weekly summary of new apps that provides visibility and allows action to be taken if necessary. 
+I wanted a way to (at least partially) satisfy the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" using existing data from Intune. Moreover, I wanted better visbility into which applications were being installed on devices in my environment so I could respond appropriately.
 
 # Troubleshooting
 
 Azure Functions Core Tools doesn't always like authenticating via the Azure Powershell SDK. If you get an error from the func publish command, try installing the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest), authenticating via "az login," and executing the func publish command on line 141 of deploy.ps1 again.
-
