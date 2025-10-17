@@ -21,7 +21,7 @@ Import-Module $PSScriptRoot/SendEmail.psm1
 #############################
 # This is how we determine if code is executing in an Azure function, or locally.
 # env.psd1 isn't copied in the function deployment package.
-# This is block is necessary because Azure uses PSDrive syntax to access environmen variables.
+# This is block is necessary because Azure uses PSDrive syntax to access environment variables.
 $EnvFile = Test-Path -Path '.\env.psd1'
 
 if ($EnvFile) {
@@ -66,8 +66,8 @@ try {
 
   } else {
     Connect-MgGraph `
-      -NoWelcome `
-      -Identity
+      -Identity `
+      -NoWelcome
 
     Write-Host "My MS Graph scopes are: " (Get-MgContext).scopes
 
@@ -76,6 +76,10 @@ try {
   $StorageContext = New-AzStorageContext `
     -StorageAccountName $STORAGE_ACCOUNT `
     -UseConnectedAccount
+
+  # Prune old CSVs before we get started
+  Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_DETECTED_APPS -OlderThanDays $RETENTION_PERIOD
+  Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_NEW_APPS -OlderThanDays $RETENTION_PERIOD
 
   Write-Host "Retrieving detected apps from Intune."
 
@@ -116,6 +120,7 @@ try {
     Write-Host "No previous apps found, unable to generate diff. Exiting..." -ForegroundColor Red
     exit 1
   }
+
   # Compare current Intune output to saved output from prior run
   Write-Host "Comparing current detected apps with previous list..."
 
@@ -188,10 +193,6 @@ try {
       -To $EMAIL_TO `
       -Subject 'App detections' `
       -Body $ResultString
-
-    # Cleanup
-    Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_DETECTED_APPS -OlderThanDays $RETENTION_PERIOD
-    Remove-OldBlobs -StorageContext $StorageContext -ContainerName $STORAGE_CONTAINER_NEW_APPS -OlderThanDays $RETENTION_PERIOD
 
     exit 0
 
