@@ -299,4 +299,4 @@ function Remove-OldBlobs {
   }
 }
 
-Export-ModuleMember -Function Get-Blobs, Read-Blob, Write-Blob, Save-CSVToBlob, Get-CSVFromContainer
+Export-ModuleMember -Function Get-Blobs, Read-Blob, Write-Blob, Save-CSVToBlob, Get-CSVFromContainer, Remove-OldBlobs
