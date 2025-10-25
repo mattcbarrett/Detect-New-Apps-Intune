@@ -1,16 +1,16 @@
 $LocalSettings = @{
   IsEncrypted = $false
-  Values = @{
-    FUNCTIONS_WORKER_RUNTIME = "powershell"
+  Values      = @{
+    FUNCTIONS_WORKER_RUNTIME         = "powershell"
     FUNCTIONS_WORKER_RUNTIME_VERSION = "7.4"
-    EMAIL_FROM = ""
-    EMAIL_TO = ""
-    STORAGE_ACCOUNT = ""
-    STORAGE_CONTAINER_DETECTED_APPS = ""
-    STORAGE_CONTAINER_NEW_APPS = ""
-    REPORT_DAY_OF_WEEK = "Monday"
-    DAYS_TO_AGGREGATE = 7
-    RETENTION_PERIOD = 14
+    EMAIL_FROM                       = ""
+    EMAIL_TO                         = ""
+    STORAGE_ACCOUNT                  = ""
+    STORAGE_CONTAINER_DETECTED_APPS  = ""
+    STORAGE_CONTAINER_NEW_APPS       = ""
+    REPORT_DAY_OF_WEEK               = "Monday"
+    DAYS_TO_AGGREGATE                = 7
+    RETENTION_PERIOD                 = 14
   }
 }
 
@@ -21,7 +21,9 @@ winget install -e --id Microsoft.Bicep
 winget install -e --id Microsoft.Azure.FunctionsCoreTools
 
 # Reload path so they're available in this session
-$env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+$env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") `
+  + ";" `
+  + [System.Environment]::GetEnvironmentVariable("Path", "User")
 
 # Install & import necessary modules
 Install-Module Az.Accounts, Az.Resources
@@ -34,11 +36,14 @@ Connect-AzAccount
 $UserPrincipalId = (Get-AzContext).Account.ExtendedProperties.HomeAccountId.Split('.')[0]
 
 # Create the function app's resources in Azure
-$Deployment = New-AzDeployment -Location "westus2" -TemplateFile "./bicep/main.bicep" -userPrincipalId $UserPrincipalId
+$Deployment = New-AzDeployment `
+  -Location "westus2" `
+  -TemplateFile "./bicep/main.bicep" `
+  -userPrincipalId $UserPrincipalId
 
 # Retrieve outputs from the deployment
-$StorageOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.storageDeploymentName).Outputs
-$FunctionAppOutputs = (Get-AzResourceGroupDeployment -resourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.functionAppDeploymentName).Outputs
+$StorageOutputs = (Get-AzResourceGroupDeployment -ResourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.storageDeploymentName).Outputs
+$FunctionAppOutputs = (Get-AzResourceGroupDeployment -ResourceGroupName $Deployment.Parameters.resourceGroupName.Value -Name $Constants.functionAppDeploymentName).Outputs
 
 # Assign the storage account and container names to local settings
 $LocalSettings["Values"]["STORAGE_ACCOUNT"] = $StorageOutputs.storageAccountName.Value
