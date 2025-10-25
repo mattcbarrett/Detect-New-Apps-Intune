@@ -35,7 +35,8 @@ if ($EnvFile) {
   $DAYS_TO_AGGREGATE = $env["DAYS_TO_AGGREGATE"]
   $RETENTION_PERIOD = $env["RETENTION_PERIOD"]
 
-} else {
+}
+else {
   $EMAIL_FROM = $env:EMAIL_FROM
   $EMAIL_TO = $env:EMAIL_TO
   $STORAGE_ACCOUNT = $env:STORAGE_ACCOUNT
@@ -64,7 +65,8 @@ try {
       -Scopes "DeviceManagementManagedDevices.Read.All, Mail.Send" `
       -NoWelcome
 
-  } else {
+  }
+  else {
     Connect-MgGraph `
       -Identity `
       -NoWelcome
@@ -97,10 +99,10 @@ try {
     # MS Store/Universal Windows Platform apps have 64 character IDs.
     if ($App.Id.length -eq 44) {
       $FilteredApps += [PSCustomObject]@{
-        "Id" = $App.Id
+        "Id"          = $App.Id
         "DisplayName" = $App.DisplayName
-        "Publsher" = $App.Publisher
-        "Version" = $App.Version
+        "Publsher"    = $App.Publisher
+        "Version"     = $App.Version
       }
     }
   }
@@ -137,7 +139,8 @@ try {
       -BlobName $BlobNameNewApps `
       -Data $Diff
 
-  } else {
+  }
+  else {
     Write-Host "No new applications found, skipping upload to blob storage."
 
   }
@@ -169,12 +172,13 @@ try {
     $Results = @()
 
     foreach ($App in $NewApps) {
-      if ($App.SideIndicator -eq '=>') {  # Filter new apps only
+      # Filter new apps only
+      if ($App.SideIndicator -eq '=>') {
         $Devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id).DeviceName -Join ", "
 
         $Results += [PSCustomObject]@{
           "Application Name" = $App.DisplayName
-          "Device(s)" = $Devices
+          "Device(s)"        = $Devices
         }
       }
     }
@@ -197,7 +201,8 @@ try {
     exit 0
 
   }
-} catch {
+}
+catch {
   Write-Output $_
 
   exit 1
