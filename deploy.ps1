@@ -62,9 +62,8 @@ New-Item -Path .\function\Modules -ItemType Directory
 Save-Module -Name Az.Accounts, Az.Resources, Az.Storage, Microsoft.Graph.Authentication, Microsoft.Graph.DeviceManagement -Path .\function\Modules
 
 # Copy powershell script & supporting modules to the function app's timer trigger
-Copy-Item .\powershell\Get-NewlyInstalledApps.ps1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
+Copy-Item .\powershell\Get-NewlyInstalledApps-v2.ps1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
 
-# Collect environment variables from the user
 Write-Host "What day of the week should the new app report be sent on? Default: Monday"
 
 do {
@@ -85,7 +84,6 @@ do {
   }
 } while ($true)
 
-# Collect environment variables from the user
 Write-Host "How many days of history should the report aggregate? Default: 7"
 
 do {
@@ -106,7 +104,6 @@ do {
   }
 } while ($true)
 
-# Collect environment variables from the user
 Write-Host "How many days of history should the system retain? Files older than this will be pruned. Default: 14"
 
 do {
@@ -140,9 +137,16 @@ $LocalSettings["Values"]["EMAIL_TO"] = $EmailTo
 # Write hashtable to json
 ConvertTo-Json -InputObject $LocalSettings | Out-File -FilePath .\function\local.settings.json
 
-# cd to function dir
 Set-Location .\function
 
+# Retrieve access token for core tools
+# This is to avoid a bug I've encountered with core tools failing
+# to retrieve a token on it's own, even though it runs the same commands
+$CurrentAzureContext = Get-AzContext
+$AzureRmProfile = [Microsoft.Azure.Commands.Common.Authentication.Abstractions.AzureRmProfileProvider]::Instance.Profile
+$ProfileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMProfileClient $AzureRmProfile
+
 # Deploy with local settings
-# Core Tools can be buggy with authentication. If it fails, try using Azure CLI's "az login" command and re-run the below.
-func azure functionapp publish $FunctionAppOutputs.functionAppName.Value --publish-local-settings
+func azure functionapp publish $FunctionAppOutputs.functionAppName.Value `
+  --publish-local-settings `
+  --access-token $($ProfileClient.AcquireAccessToken($CurrentAzureContext.Subscription.TenantId).AccessToken)
