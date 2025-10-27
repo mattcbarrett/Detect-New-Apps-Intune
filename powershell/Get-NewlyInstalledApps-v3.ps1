@@ -8,7 +8,8 @@ Import-Module `
   Microsoft.Graph.Authentication, `
   Microsoft.Graph.DeviceManagement, `
   $PSScriptRoot/BlobStorage.psm1, `
-  $PSScriptRoot/SendEmail.psm1
+  $PSScriptRoot/SendEmail.psm1, `
+  $PSScriptRoot/Functions.psm1
 
 #############################
 ### Environment Variables ###
@@ -45,9 +46,9 @@ else {
 #################
 ### Constants ###
 ################# 
-$Date = Get-Date -Format MMddyyyy
-$BlobNameDetectedApps = "detected_apps_${Date}.csv"
-$BlobNameNewApps = "new_apps_${Date}.csv"
+$Date = Get-Date -Format yyyyMMdd-HHmmss
+$BlobNameDetectedApps = "detected_apps_${Date}.json"
+$BlobNameNewApps = "new_apps_${Date}.json"
 
 try {
   # Perform the same check on $EnvFile to determine if we're running in Azure. 
@@ -84,77 +85,89 @@ try {
 
   Write-Host "Retrieving detected apps from Intune."
 
-  $DetectedApps = Get-MgDeviceManagementDetectedApp -All
+  $AllDetectedApps = Get-MgDeviceManagementDetectedApp -All
 
-  if ($DetectedApps.length -eq 0) {
+  if ($AllDetectedApps.length -eq 0) {
     Write-Host "Intune's detected apps list is empty. Exiting."
 
     exit 0
 
   }
 
-  $FilteredApps = @()
-
-  foreach ($App in $DetectedApps) {
+  $DetectedApps = foreach ($App in $AllDetectedApps) {
     # Win32/Msi/Msix app IDs are 44 characters long, 
     # MS Store/Universal Windows Platform apps have 64 character IDs.
     if ($App.Id.length -eq 44) {
-      $FilteredApps += [PSCustomObject]@{
+      [PSCustomObject]@{
         "Id"          = $App.Id
         "DisplayName" = $App.DisplayName
-        "Publsher"    = $App.Publisher
+        "Publisher"   = $App.Publisher
         "Version"     = $App.Version
+        "Devices"     = @(
+          (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id).DeviceName
+        )
       }
     }
   }
 
-  Save-CSVToBlob `
+  Save-Results `
     -StorageContext $StorageContext `
     -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
     -BlobName $BlobNameDetectedApps `
-    -Data $FilteredApps
+    -Data $DetectedApps
 
-  $PreviousDetectedApps = Get-CSVFromContainer `
+  $PreviousDetectedApps = Read-MostRecentResults `
     -StorageContext $StorageContext `
-    -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
-    -MostRecent
+    -ContainerName $STORAGE_CONTAINER_DETECTED_APPS
 
   if (!$PreviousDetectedApps) {
-    Write-Host "No prior CSV of detected apps was found in container: $STORAGE_CONTAINER_DETECTED_APPS.`nThis is expected on the first run. Exiting."
+    Write-Host "No prior detected apps found in container: $STORAGE_CONTAINER_DETECTED_APPS.`nThis is expected on the first run. Exiting."
 
     exit 0
 
   }
 
   # Compare current Intune output to saved output from prior run
-  Write-Host "Comparing today's detected apps list with prior CSV..."
+  Write-Host "Comparing today's detected apps list with prior run..."
 
-  $Diff = Compare-Object `
-    -ReferenceObject $PreviousDetectedApps `
-    -DifferenceObject $FilteredApps `
-    -Property DisplayName `
-    -PassThru
-
-  if ($Diff) {
-    $Results = @()
-
-    foreach ($App in $Diff) {
-      # Filter new apps only
-      if ($App.SideIndicator -eq '=>') {  
-        $Devices = (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id).DeviceName -Join ":"
-
-        $Results += [PSCustomObject]@{
-          "Application Name" = $App.DisplayName
-          "Device(s)"        = $Devices
+  $Detections = @(
+    foreach ($PreviousApp in $PreviousDetectedApps) {
+      $DetectedApp = $DetectedApps | Where-Object { $_.Id -eq $PreviousApp.Id }
+      
+      if ($DetectedApp) {
+        $NewDevices = $DetectedApp.Devices | Where-Object { $_ -notin $PreviousApp.Devices }
+          
+        if ($NewDevices) {
+          [PSCustomObject]@{
+            "Id"               = $DetectedApp.Id
+            "Application Name" = $DetectedApp.DisplayName
+            "Version"          = $DetectedApp.Version
+            "Devices"          = @($NewDevices) # Needs to become an array
+          }
         }
       }
+
+
     }
 
-    Save-CSVToBlob `
+    $NewApps = $DetectedApps | Where-Object { $_.Id -notin $PreviousDetectedApps.Id }
+
+    foreach ($NewApp in $NewApps) {
+      [PSCustomObject]@{
+        "Id"               = $NewApp.Id
+        "Application Name" = $NewApp.DisplayName
+        "Version"          = $NewApp.Version
+        "Devices"          = $NewApp.Devices # Already an array
+      }
+    }
+  )
+
+  if ($Detections) {
+    Save-Results `
       -StorageContext $StorageContext `
       -ContainerName $STORAGE_CONTAINER_NEW_APPS `
       -BlobName $BlobNameNewApps `
-      -Data $Results
+      -Data $Detections
 
   }
   else {
@@ -164,13 +177,13 @@ try {
 
   # If it's $REPORT_DAY_OF_WEEK, grab the last week's worth of diffs and send the report
   if ((Get-Date).DayOfWeek -eq $REPORT_DAY_OF_WEEK) {
-    $NewApps = Get-CSVFromContainer `
+    $AggregateResults = Read-AggregateResults `
       -StorageContext $StorageContext `
       -ContainerName $STORAGE_CONTAINER_NEW_APPS `
-      -WithinLastDays $DAYS_TO_AGGREGATE
+      -DaysToAggregate $DAYS_TO_AGGREGATE
 
-    if ($NewApps.length -eq 0) {
-      Write-Output "No new apps found in the last $DAYS_TO_AGGREGATE days."
+    if ($AggregateResults.length -eq 0) {
+      Write-Host "No new apps found in the last $DAYS_TO_AGGREGATE days."
       
       Send-Email `
         -From $EMAIL_FROM `
@@ -182,16 +195,8 @@ try {
 
     }
 
-    # Sort results, remove duplicates
-    $Results = $NewApps | Group-Object -Property 'Application Name' | ForEach-Object {
-      [PSCustomObject]@{
-        "Application Name" = $_.Name
-        "Device(s)"        = (($_.Group."Device(s)" -split ':') | Select-Object -Unique | Sort-Object) -join ', '
-      }
-    }
-
     # Format so output isn't truncated
-    $ResultString = $Results | Format-List -Property 'Application Name', 'Device(s)' | Out-String
+    $ResultString = $AggregateResults | Format-List -Property 'Application Name', 'Version', 'Devices' | Out-String
 
     Write-Host "`nResults:`n $ResultString"
 
