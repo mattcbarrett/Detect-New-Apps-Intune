@@ -107,7 +107,7 @@ try {
         "Publisher"   = $App.Publisher
         "Version"     = $App.Version
         "Devices"     = @(
-          (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id).DeviceName
+          (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id -Select "DeviceName" -All).DeviceName
         )
       }
     }
