@@ -29,7 +29,8 @@ $env:Path = [System.Environment]::GetEnvironmentVariable("Path", "Machine") `
 Install-Module Az.Accounts, Az.Resources
 Import-Module Az.Accounts, Az.Resources -Force
 
-# Login to Azure
+# Disable login via web acct manager - buggy
+Update-AzConfig -EnableLoginByWam $false
 Connect-AzAccount
 
 # Fetch current user's id
