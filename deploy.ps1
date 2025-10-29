@@ -67,7 +67,7 @@ New-Item -Path .\function\Modules -ItemType Directory
 Save-Module -Name Az.Accounts, Az.Resources, Az.Storage, Microsoft.Graph.Authentication, Microsoft.Graph.DeviceManagement -Path .\function\Modules
 
 # Copy powershell script & supporting modules to the function app's timer trigger
-Copy-Item .\powershell\Get-NewlyInstalledApps-v2.ps1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
+Copy-Item .\powershell\Get-NewlyInstalledApps-v3.ps1, .\powershell\Functions.psm1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
 
 Write-Host "What day of the week should the new app report be sent on? Default: Monday"
 
@@ -78,12 +78,14 @@ do {
   if (!$DayOfWeek) {
     break
 
-  } elseif ($DayOfWeek -match "^[a-zA-Z]+$") {
+  }
+  elseif ($DayOfWeek -match "^[a-zA-Z]+$") {
     $LocalSettings["Values"]["REPORT_DAY_OF_WEEK"] = $DayOfWeek
     
     break
 
-  } else {
+  }
+  else {
     Write-Host "ERROR: Input value must be a day of the week!" -ForegroundColor Red
 
   }
@@ -98,12 +100,14 @@ do {
   if (!$DaysToAggregate) {
     break
 
-  } elseif ([int]::TryParse($DaysToAggregate, [ref]$null)) {
+  }
+  elseif ([int]::TryParse($DaysToAggregate, [ref]$null)) {
     $LocalSettings["Values"]["DAYS_TO_AGGREGATE"] = $DaysToAggregate
     
     break
 
-  } else {
+  }
+  else {
     Write-Host "ERROR: Input value must be an integer!" -ForegroundColor Red
 
   }
@@ -118,10 +122,12 @@ do {
   if (!$RetentionPeriod) {
     break
 
-  } elseif ([int]::TryParse($RetentionPeriod, [ref]$null)) {
+  }
+  elseif ([int]::TryParse($RetentionPeriod, [ref]$null)) {
     $LocalSettings["Values"]["RETENTION_PERIOD"] = $RetentionPeriod
 
-  } else {
+  }
+  else {
     Write-Host "ERROR: Input value must be an integer!" -ForegroundColor Red
 
   }

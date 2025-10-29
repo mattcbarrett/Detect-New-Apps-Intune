@@ -1,5 +1,5 @@
 {
-  "appName": "detect-new-apps",
+  "appName": "detect-new-apps-v3",
   "environmentName": "prod",
   "location": "westus2",
   "storageContainerNameDetectedApps": "detectedapps",

@@ -69,7 +69,7 @@ try {
   }
 
   # Mitigate 429 errors from MS Graph
-  Set-MgRequestContext -MaxRetry 5 -RetryDelay 5
+  Set-MgRequestContext -MaxRetry 5
 
   $StorageContext = New-AzStorageContext `
     -StorageAccountName $STORAGE_ACCOUNT `
@@ -111,6 +111,10 @@ try {
         )
       }
     }
+
+    # Rate-limit mitigation
+    Start-Sleep -Milliseconds 50
+
   }
 
   Save-Results `
