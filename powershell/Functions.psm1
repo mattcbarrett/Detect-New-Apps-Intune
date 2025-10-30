@@ -149,12 +149,28 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     # Build batch request body
     $requests = @()
+    $batchIds = @{}
+    
     foreach ($app in $batchApps) {
+      # Check for duplicate IDs within this batch
+      if ($batchIds.ContainsKey($app.Id)) {
+        Write-Warning "Duplicate app ID detected in batch: $($app.Id) - Skipping duplicate entry"
+        continue
+      }
+      
+      $batchIds[$app.Id] = $true
+      
       $requests += @{
         id     = $app.Id
         method = "GET"
         url    = "/deviceManagement/detectedApps/$($app.Id)/managedDevices?`$select=deviceName"
       }
+    }
+    
+    # Skip batch if no valid requests
+    if ($requests.Count -eq 0) {
+      Write-Warning "No valid requests in batch starting at index $i"
+      continue
     }
     
     $batchBody = @{
