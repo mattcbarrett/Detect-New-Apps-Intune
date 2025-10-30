@@ -133,7 +133,13 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     [Parameter(Mandatory = $false)]
     [ValidateRange(1, 20)]
-    [int]$BatchSize = 20
+    [int]$BatchSize = 20,
+    
+    [Parameter(Mandatory = $false)]
+    [int]$MaxRetries = 5,
+    
+    [Parameter(Mandatory = $false)]
+    [int]$InitialDelaySeconds = 2
   )
   
   # Verify we're connected to Microsoft Graph
@@ -177,49 +183,86 @@ function Get-DetectedAppsManagedDevicesBatch {
       requests = $requests
     }
     
-    try {
-      # Execute batch request using Invoke-MgGraphRequest
-      $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "v1.0/`$batch" -Body $batchBody
-      
-      # Process responses and match back to apps
-      foreach ($response in $batchResponse.responses) {
-        # Find the corresponding app using the id
-        $matchedApp = $batchApps | Where-Object { $_.Id -eq $response.id }
+    # Retry loop with exponential backoff
+    $retryCount = 0
+    $success = $false
+    
+    while (-not $success -and $retryCount -le $MaxRetries) {
+      try {
+        # Execute batch request using Invoke-MgGraphRequest
+        $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "v1.0/`$batch" -Body $batchBody
+        $success = $true
         
-        if ($response.status -eq 200) {
-          # Extract device names from successful response
-          $deviceNames = @()
-          if ($response.body.value) {
-            $deviceNames = $response.body.value | ForEach-Object { $_.deviceName }
-          }
+        # Process responses and match back to apps
+        foreach ($response in $batchResponse.responses) {
+          # Find the corresponding app using the id
+          $matchedApp = $batchApps | Where-Object { $_.Id -eq $response.id }
           
-          # Create result object matching original structure
-          $results += [PSCustomObject]@{
-            Id          = $matchedApp.Id
-            DisplayName = $matchedApp.DisplayName
-            Publisher   = $matchedApp.Publisher
-            Version     = $matchedApp.Version
-            Devices     = $deviceNames
+          if ($response.status -eq 200) {
+            # Extract device names from successful response
+            $deviceNames = @()
+            if ($response.body.value) {
+              $deviceNames = $response.body.value | ForEach-Object { $_.deviceName }
+            }
+            
+            # Create result object matching original structure
+            $results += [PSCustomObject]@{
+              Id          = $matchedApp.Id
+              DisplayName = $matchedApp.DisplayName
+              Publisher   = $matchedApp.Publisher
+              Version     = $matchedApp.Version
+              Devices     = $deviceNames
+            }
           }
-        }
-        else {
-          # Handle failed individual request
-          Write-Warning "Failed to get devices for app '$($matchedApp.DisplayName)' (ID: $($matchedApp.Id)). Status: $($response.status)"
-          
-          # Still add the app but with empty devices array
-          $results += [PSCustomObject]@{
-            Id          = $matchedApp.Id
-            DisplayName = $matchedApp.DisplayName
-            Publisher   = $matchedApp.Publisher
-            Version     = $matchedApp.Version
-            Devices     = @()
+          else {
+            # Handle failed individual request
+            Write-Warning "Failed to get devices for app '$($matchedApp.DisplayName)' (ID: $($matchedApp.Id)). Status: $($response.status)"
+            
+            # Still add the app but with empty devices array
+            $results += [PSCustomObject]@{
+              Id          = $matchedApp.Id
+              DisplayName = $matchedApp.DisplayName
+              Publisher   = $matchedApp.Publisher
+              Version     = $matchedApp.Version
+              Devices     = @()
+            }
           }
         }
       }
-    }
-    catch {
-      Write-Error "Batch request failed: $_"
-      throw
+      catch {
+        # Check if it's a 429 error
+        $is429 = $false
+        if ($_.Exception.Response.StatusCode -eq 429 -or $_.Exception.Message -like "*429*") {
+          $is429 = $true
+        }
+        
+        if ($is429 -and $retryCount -lt $MaxRetries) {
+          $retryCount++
+          
+          # Calculate exponential backoff delay
+          $delaySeconds = $InitialDelaySeconds * [Math]::Pow(2, $retryCount - 1)
+          
+          # Check for Retry-After header
+          $retryAfter = $null
+          if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers['Retry-After']) {
+            $retryAfter = $_.Exception.Response.Headers['Retry-After']
+            if ($retryAfter -as [int]) {
+              $delaySeconds = [Math]::Max($delaySeconds, [int]$retryAfter)
+            }
+          }
+          
+          Write-Warning "Rate limited (429). Retry $retryCount of $MaxRetries. Waiting $delaySeconds seconds..."
+          Start-Sleep -Seconds $delaySeconds
+        }
+        elseif ($is429) {
+          Write-Error "Max retries ($MaxRetries) exceeded due to rate limiting. Batch starting at index $i failed."
+          throw
+        }
+        else {
+          Write-Error "Batch request failed: $_"
+          throw
+        }
+      }
     }
     
     # Rate-limit mitigation between batches
