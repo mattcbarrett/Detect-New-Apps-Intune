@@ -163,7 +163,7 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     try {
       # Execute batch request using Invoke-MgGraphRequest
-      $batchResponse = Invoke-MgGraphRequest -Method POST -Uri '$batch' -Body $batchBody
+      $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "v1.0/`$batch" -Body $batchBody
       
       # Process responses and match back to apps
       foreach ($response in $batchResponse.responses) {
