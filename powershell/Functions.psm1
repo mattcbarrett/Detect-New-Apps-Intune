@@ -139,7 +139,7 @@ function Get-DetectedAppsManagedDevicesBatch {
     [int]$MaxRetries = 5,
     
     [Parameter(Mandatory = $false)]
-    [int]$InitialDelaySeconds = 2
+    [int]$InitialDelaySeconds = 5
   )
   
   # Verify we're connected to Microsoft Graph
@@ -147,6 +147,10 @@ function Get-DetectedAppsManagedDevicesBatch {
   if (-not $context) {
     throw "Not connected to Microsoft Graph. Please run Connect-MgGraph first."
   }
+  
+  # Global rate limit tracking
+  $script:consecutiveRateLimits = 0
+  $script:lastRateLimitTime = $null
   
   # Process apps in batches
   $results = @()
@@ -189,9 +193,19 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     while (-not $success -and $retryCount -le $MaxRetries) {
       try {
+        # If we've had recent rate limits, add proactive delay
+        if ($script:consecutiveRateLimits -gt 0) {
+          $proactiveDelay = $InitialDelaySeconds * [Math]::Pow(2, $script:consecutiveRateLimits - 1)
+          Write-Verbose "Proactive delay due to recent rate limits: $proactiveDelay seconds"
+          Start-Sleep -Seconds $proactiveDelay
+        }
+        
         # Execute batch request using Invoke-MgGraphRequest
         $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "v1.0/`$batch" -Body $batchBody
         $success = $true
+        
+        # Reset consecutive rate limit counter on success
+        $script:consecutiveRateLimits = 0
         
         # Process responses and match back to apps
         foreach ($response in $batchResponse.responses) {
@@ -232,26 +246,40 @@ function Get-DetectedAppsManagedDevicesBatch {
       catch {
         # Check if it's a 429 error
         $is429 = $false
-        if ($_.Exception.Response.StatusCode -eq 429 -or $_.Exception.Message -like "*429*") {
+        if ($_.Exception.Response.StatusCode -eq 429 -or 
+          $_.Exception.Message -like "*429*" -or
+          $_.Exception.Message -like "*throttled*" -or
+          $_.Exception.Message -like "*rate limit*") {
           $is429 = $true
         }
         
         if ($is429 -and $retryCount -lt $MaxRetries) {
           $retryCount++
+          $script:consecutiveRateLimits++
+          $script:lastRateLimitTime = Get-Date
           
-          # Calculate exponential backoff delay
+          # Calculate exponential backoff delay - more aggressive
           $delaySeconds = $InitialDelaySeconds * [Math]::Pow(2, $retryCount - 1)
+          
+          # Add jitter to prevent thundering herd
+          $jitter = Get-Random -Minimum 0 -Maximum ($delaySeconds * 0.2)
+          $delaySeconds = $delaySeconds + $jitter
           
           # Check for Retry-After header
           $retryAfter = $null
-          if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers['Retry-After']) {
-            $retryAfter = $_.Exception.Response.Headers['Retry-After']
-            if ($retryAfter -as [int]) {
-              $delaySeconds = [Math]::Max($delaySeconds, [int]$retryAfter)
+          try {
+            if ($_.Exception.Response.Headers -and $_.Exception.Response.Headers['Retry-After']) {
+              $retryAfter = $_.Exception.Response.Headers['Retry-After']
+              if ($retryAfter -as [int]) {
+                $delaySeconds = [Math]::Max($delaySeconds, [int]$retryAfter + 1)
+              }
             }
           }
+          catch {
+            # Ignore header parsing errors
+          }
           
-          Write-Warning "Rate limited (429). Retry $retryCount of $MaxRetries. Waiting $delaySeconds seconds..."
+          Write-Warning "Rate limited (429). Retry $retryCount of $MaxRetries. Waiting $([Math]::Round($delaySeconds, 2)) seconds... (Consecutive limits: $script:consecutiveRateLimits)"
           Start-Sleep -Seconds $delaySeconds
         }
         elseif ($is429) {
@@ -265,9 +293,16 @@ function Get-DetectedAppsManagedDevicesBatch {
       }
     }
     
-    # Rate-limit mitigation between batches
+    # Adaptive rate-limit mitigation between batches
+    $betweenBatchDelay = 0.1
+    if ($script:consecutiveRateLimits -gt 0) {
+      # Increase delay based on recent rate limiting
+      $betweenBatchDelay = 1 * [Math]::Pow(1.5, $script:consecutiveRateLimits - 1)
+    }
+    
     if ($i + $BatchSize -lt $DetectedApps.Count) {
-      Start-Sleep -Milliseconds 100
+      Write-Verbose "Waiting $([Math]::Round($betweenBatchDelay, 2)) seconds before next batch"
+      Start-Sleep -Seconds $betweenBatchDelay
     }
   }
   
