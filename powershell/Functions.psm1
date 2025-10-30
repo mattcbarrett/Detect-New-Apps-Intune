@@ -159,6 +159,13 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     Write-Host "Processing batch $([Math]::Floor($i / $BatchSize) + 1) of $([Math]::Ceiling($DetectedApps.Count / $BatchSize)) (Apps $($i + 1)-$($i + $batchApps.Count))" -ForegroundColor Cyan
     
+    # Apply proactive delay at the START of batch if we've had recent rate limits
+    if ($script:consecutiveRateLimits -gt 0) {
+      $proactiveDelay = $InitialDelaySeconds * [Math]::Pow(2, [Math]::Min($script:consecutiveRateLimits - 1, 5))
+      Write-Host "  Proactive delay at batch start due to recent rate limits ($script:consecutiveRateLimits consecutive): $([Math]::Round($proactiveDelay, 2)) seconds" -ForegroundColor Yellow
+      Start-Sleep -Seconds $proactiveDelay
+    }
+    
     # Build batch request body
     $requests = @()
     $batchIds = @{}
@@ -196,13 +203,6 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     while (-not $success -and $retryCount -le $MaxRetries) {
       try {
-        # If we've had recent rate limits, add proactive delay
-        if ($script:consecutiveRateLimits -gt 0) {
-          $proactiveDelay = $InitialDelaySeconds * [Math]::Pow(2, $script:consecutiveRateLimits - 1)
-          Write-Host "  Proactive delay due to recent rate limits: $([Math]::Round($proactiveDelay, 2)) seconds" -ForegroundColor Yellow
-          Start-Sleep -Seconds $proactiveDelay
-        }
-        
         # Execute batch request using Invoke-MgGraphRequest
         $batchResponse = Invoke-MgGraphRequest -Method POST -Uri "v1.0/`$batch" -Body $batchBody
         $success = $true
@@ -294,14 +294,6 @@ function Get-DetectedAppsManagedDevicesBatch {
       }
     }
     
-    # Calculate adaptive delay BEFORE resetting counters
-    $betweenBatchDelay = 0.1
-    if ($script:consecutiveRateLimits -gt 0) {
-      # Increase delay based on recent rate limiting
-      $betweenBatchDelay = 1 * [Math]::Pow(1.5, $script:consecutiveRateLimits - 1)
-      Write-Host "  Adaptive delay active (consecutive limits: $script:consecutiveRateLimits)" -ForegroundColor Yellow
-    }
-    
     # Only reset counter if we had a clean batch with no rate limits
     if ($success -and -not $hadRateLimitInBatch) {
       # Decay the counter gradually instead of resetting to zero
@@ -316,9 +308,10 @@ function Get-DetectedAppsManagedDevicesBatch {
       }
     }
     
-    if ($i + $BatchSize -lt $DetectedApps.Count) {
-      Write-Host "  Waiting $([Math]::Round($betweenBatchDelay, 2)) seconds before next batch" -ForegroundColor Gray
-      Start-Sleep -Seconds $betweenBatchDelay
+    # Small delay between batches (only when not using proactive delay on next batch)
+    if ($i + $BatchSize -lt $DetectedApps.Count -and $script:consecutiveRateLimits -eq 0) {
+      Write-Host "  Waiting 0.5 seconds before next batch" -ForegroundColor Gray
+      Start-Sleep -Milliseconds 500
     }
   }
   
