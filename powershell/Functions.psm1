@@ -125,4 +125,94 @@ function Read-AggregateResults {
   
 }
 
-Export-ModuleMember -Function Save-Results, Read-MostRecentResults, Read-AggregateResults
+function Get-DetectedAppsManagedDevicesBatch {
+  [CmdletBinding()]
+  param(
+    [Parameter(Mandatory = $true)]
+    [array]$DetectedApps,
+    
+    [Parameter(Mandatory = $false)]
+    [ValidateRange(1, 20)]
+    [int]$BatchSize = 20
+  )
+  
+  # Verify we're connected to Microsoft Graph
+  $context = Get-MgContext
+  if (-not $context) {
+    throw "Not connected to Microsoft Graph. Please run Connect-MgGraph first."
+  }
+  
+  # Process apps in batches
+  $results = @()
+  for ($i = 0; $i -lt $DetectedApps.Count; $i += $BatchSize) {
+    $batchApps = $DetectedApps[$i..[Math]::Min($i + $BatchSize - 1, $DetectedApps.Count - 1)]
+    
+    # Build batch request body
+    $requests = @()
+    foreach ($app in $batchApps) {
+      $requests += @{
+        id     = $app.Id
+        method = "GET"
+        url    = "/deviceManagement/detectedApps/$($app.Id)/managedDevices?`$select=deviceName"
+      }
+    }
+    
+    $batchBody = @{
+      requests = $requests
+    }
+    
+    try {
+      # Execute batch request using Invoke-MgGraphRequest
+      $batchResponse = Invoke-MgGraphRequest -Method POST -Uri '$batch' -Body $batchBody
+      
+      # Process responses and match back to apps
+      foreach ($response in $batchResponse.responses) {
+        # Find the corresponding app using the id
+        $matchedApp = $batchApps | Where-Object { $_.Id -eq $response.id }
+        
+        if ($response.status -eq 200) {
+          # Extract device names from successful response
+          $deviceNames = @()
+          if ($response.body.value) {
+            $deviceNames = $response.body.value | ForEach-Object { $_.deviceName }
+          }
+          
+          # Create result object matching original structure
+          $results += [PSCustomObject]@{
+            Id          = $matchedApp.Id
+            DisplayName = $matchedApp.DisplayName
+            Publisher   = $matchedApp.Publisher
+            Version     = $matchedApp.Version
+            Devices     = $deviceNames
+          }
+        }
+        else {
+          # Handle failed individual request
+          Write-Warning "Failed to get devices for app '$($matchedApp.DisplayName)' (ID: $($matchedApp.Id)). Status: $($response.status)"
+          
+          # Still add the app but with empty devices array
+          $results += [PSCustomObject]@{
+            Id          = $matchedApp.Id
+            DisplayName = $matchedApp.DisplayName
+            Publisher   = $matchedApp.Publisher
+            Version     = $matchedApp.Version
+            Devices     = @()
+          }
+        }
+      }
+    }
+    catch {
+      Write-Error "Batch request failed: $_"
+      throw
+    }
+    
+    # Rate-limit mitigation between batches
+    if ($i + $BatchSize -lt $DetectedApps.Count) {
+      Start-Sleep -Milliseconds 100
+    }
+  }
+  
+  return $results
+}
+
+Export-ModuleMember -Function Save-Results, Read-MostRecentResults, Read-AggregateResults, Get-DetectedAppsManagedDevicesBatch

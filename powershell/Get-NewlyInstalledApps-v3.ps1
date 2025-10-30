@@ -97,25 +97,29 @@ try {
 
   }
 
-  $DetectedApps = foreach ($App in $AllDetectedApps) {
-    # Win32/Msi/Msix app IDs are 44 characters long, 
-    # MS Store/Universal Windows Platform apps have 64 character IDs.
-    if ($App.Id.length -eq 44) {
-      [PSCustomObject]@{
-        "Id"          = $App.Id
-        "DisplayName" = $App.DisplayName
-        "Publisher"   = $App.Publisher
-        "Version"     = $App.Version
-        "Devices"     = @(
-          (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id -Select "DeviceName" -All).DeviceName
-        )
-      }
-    }
+  $AllDetectedApps = $AllDetectedApps | Where-Object { $_.Id.Length -eq 44 }
 
-    # Rate-limit mitigation
-    Start-Sleep -Milliseconds 50
+  # $DetectedApps = foreach ($App in $AllDetectedApps) {
+  #   # Win32/Msi/Msix app IDs are 44 characters long, 
+  #   # MS Store/Universal Windows Platform apps have 64 character IDs.
+  #   if ($App.Id.length -eq 44) {
+  #     [PSCustomObject]@{
+  #       "Id"          = $App.Id
+  #       "DisplayName" = $App.DisplayName
+  #       "Publisher"   = $App.Publisher
+  #       "Version"     = $App.Version
+  #       "Devices"     = @(
+  #         (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id -Select "DeviceName" -All).DeviceName
+  #       )
+  #     }
+  #   }
 
-  }
+  #   # Rate-limit mitigation
+  #   Start-Sleep -Milliseconds 50
+
+  # }
+
+  $DetectedApps = Get-DetectedAppsManagedDevicesBatch -DetectedApps $AllDetectedApps -BatchSize 20
 
   Save-Results `
     -StorageContext $StorageContext `
