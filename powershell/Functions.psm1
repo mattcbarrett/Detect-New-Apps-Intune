@@ -193,12 +193,14 @@ function Get-DetectedAppsManagedDevicesBatch {
     
     # Build batch request body
     $requests = @()
+    $requestIndex = 0
     foreach ($app in $batchApps) {
       $requests += @{
-        id     = $app.Id
+        id     = "$requestIndex"  # Use index to guarantee uniqueness within batch
         method = "GET"
         url    = "/deviceManagement/detectedApps/$($app.Id)/managedDevices?`$select=deviceName"
       }
+      $requestIndex++
     }
     
     $BatchBody = @{
@@ -211,8 +213,9 @@ function Get-DetectedAppsManagedDevicesBatch {
       
       # Process responses and match back to apps
       foreach ($response in $batchResponse.responses) {
-        # Find the corresponding app using the id
-        $matchedApp = $batchApps | Where-Object { $_.Id -eq $response.id }
+        # Use the index to find the corresponding app
+        $appIndex = [int]$response.id
+        $matchedApp = $batchApps[$appIndex]
         
         if ($response.status -eq 200) {
           # Extract device names from successful response
