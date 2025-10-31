@@ -274,10 +274,7 @@ function Get-DetectedAppsManagedDevicesBatch {
     [int]$BatchSize = 20,
     
     [Parameter(Mandatory = $false)]
-    [int]$MaxRetries = 5,
-    
-    [Parameter(Mandatory = $false)]
-    [int]$InitialDelaySeconds = 2
+    [int]$MaxRetries = 5
   )
   
   $Context = Get-MgContext
@@ -290,20 +287,34 @@ function Get-DetectedAppsManagedDevicesBatch {
     "Content-Type" = "application/json"
   }
   
+  # Throttle tracking for per-app-per-tenant limits
+  # Limit: 1000 GET requests per 20 seconds per app per tenant
+  # With batch size of 20, that's 50 batches per 20 seconds = 400ms minimum between batches
+  $MinDelayBetweenBatchesMs = 500  # 500ms = conservative, allows ~40 batches per 20 seconds
+  $lastBatchTime = $null
+  
   # Process apps in batches
   $results = @()
   $batchNumber = 0
   
   for ($i = 0; $i -lt $DetectedApps.Count; $i += $BatchSize) {
     $batchNumber++
-    $batchApps = $DetectedApps[$i..[Math]::Min($i + $BatchSize - 1, $DetectedApps.Count - 1)]
     
-    Write-Host "Processing batch $batchNumber of $([Math]::Ceiling($DetectedApps.Count / $BatchSize)) ($($batchApps.Count) apps)"
+    # Rate limiting: ensure minimum time between batches
+    if ($lastBatchTime) {
+      $timeSinceLastBatch = (Get-Date) - $lastBatchTime
+      $sleepNeeded = $MinDelayBetweenBatchesMs - $timeSinceLastBatch.TotalMilliseconds
+      if ($sleepNeeded -gt 0) {
+        Start-Sleep -Milliseconds ([Math]::Ceiling($sleepNeeded))
+      }
+    }
+    
+    $batchApps = $DetectedApps[$i..[Math]::Min($i + $BatchSize - 1, $DetectedApps.Count - 1)]
+    Write-Verbose "Processing batch $batchNumber of $([Math]::Ceiling($DetectedApps.Count / $BatchSize)) ($($batchApps.Count) apps)"
     
     # Track apps that need retry
     $appsToProcess = $batchApps
     $retryCount = 0
-    $retryDelay = $InitialDelaySeconds
     
     while ($appsToProcess.Count -gt 0 -and $retryCount -le $MaxRetries) {
       # Build batch request body
@@ -323,7 +334,8 @@ function Get-DetectedAppsManagedDevicesBatch {
       } | ConvertTo-Json -Depth 10
       
       try {
-        # Execute batch request
+        # Execute batch request and record timing
+        $lastBatchTime = Get-Date
         $batchResponse = Invoke-MgGraphRequestWithRetry -Uri $BatchUri -Method Post -Headers $Headers -Body $BatchBody
         
         # Track which apps need to be retried
@@ -353,10 +365,10 @@ function Get-DetectedAppsManagedDevicesBatch {
           }
           elseif ($response.status -eq 429) {
             # Rate limited - add to retry list
-            Write-Host "App '$($matchedApp.DisplayName)' hit rate limit (429). Will retry."
+            Write-Verbose "App '$($matchedApp.DisplayName)' hit rate limit (429). Will retry."
             $appsNeedingRetry += $matchedApp
             
-            # Check for Retry-After header
+            # Check for Retry-After header in the response
             if ($response.headers -and $response.headers.'Retry-After') {
               $retryAfterValue = [int]$response.headers.'Retry-After'
               if ($retryAfterValue -gt $maxRetryAfterSeen) {
@@ -380,16 +392,14 @@ function Get-DetectedAppsManagedDevicesBatch {
         
         # If we have apps to retry, wait before retrying
         if ($appsNeedingRetry.Count -gt 0) {
-          # Use Retry-After if provided, otherwise exponential backoff with jitter
+          # Calculate backoff: prefer Retry-After, otherwise exponential with 20-second awareness
           if ($maxRetryAfterSeen -gt 0) {
             $waitTime = $maxRetryAfterSeen
           }
           else {
-            # Exponential backoff: 2, 4, 8, 16, 32 seconds
-            $waitTime = $retryDelay * [Math]::Pow(2, $retryCount)
-            # Add jitter (±20%)
-            $jitter = Get-Random -Minimum (-0.2 * $waitTime) -Maximum (0.2 * $waitTime)
-            $waitTime = [Math]::Max(1, $waitTime + $jitter)
+            # Since limit is per 20 seconds, wait at least 20 seconds on first retry
+            # Then increase exponentially: 20, 40, 60 seconds
+            $waitTime = 20 * [Math]::Pow(2, [Math]::Min($retryCount, 2))
           }
           
           Write-Host "Rate limited: Waiting $([Math]::Round($waitTime, 1)) seconds before retrying $($appsNeedingRetry.Count) apps... (Attempt $($retryCount + 1)/$MaxRetries)" -ForegroundColor Yellow
@@ -419,12 +429,6 @@ function Get-DetectedAppsManagedDevicesBatch {
           Devices     = @()
         }
       }
-    }
-    
-    # Increased delay between successful batches to avoid rate limiting
-    if ($i + $BatchSize -lt $DetectedApps.Count) {
-      Write-Host "Waiting before next batch..."
-      Start-Sleep -Seconds 2
     }
   }
   
