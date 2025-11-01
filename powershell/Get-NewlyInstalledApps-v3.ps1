@@ -9,7 +9,8 @@ Import-Module `
   Microsoft.Graph.DeviceManagement, `
   $PSScriptRoot/BlobStorage.psm1, `
   $PSScriptRoot/SendEmail.psm1, `
-  $PSScriptRoot/Functions.psm1
+  $PSScriptRoot/Functions.psm1 `
+  -Force
 
 #############################
 ### Environment Variables ###
@@ -68,9 +69,6 @@ try {
 
   }
 
-  # Mitigate 429 errors from MS Graph
-  Set-MgRequestContext -MaxRetry 5
-
   $StorageContext = New-AzStorageContext `
     -StorageAccountName $STORAGE_ACCOUNT `
     -UseConnectedAccount
@@ -99,27 +97,25 @@ try {
 
   $AllDetectedApps = $AllDetectedApps | Where-Object { $_.Id.Length -eq 44 }
 
-  # $DetectedApps = foreach ($App in $AllDetectedApps) {
-  #   # Win32/Msi/Msix app IDs are 44 characters long, 
-  #   # MS Store/Universal Windows Platform apps have 64 character IDs.
-  #   if ($App.Id.length -eq 44) {
-  #     [PSCustomObject]@{
-  #       "Id"          = $App.Id
-  #       "DisplayName" = $App.DisplayName
-  #       "Publisher"   = $App.Publisher
-  #       "Version"     = $App.Version
-  #       "Devices"     = @(
-  #         (Get-MgDeviceManagementDetectedAppManagedDevice -DetectedAppId $App.Id -Select "DeviceName" -All).DeviceName
-  #       )
-  #     }
-  #   }
+  $DetectedApps = foreach ($App in $AllDetectedApps) {
+    # Win32/Msi/Msix app IDs are 44 characters long, 
+    # MS Store/Universal Windows Platform apps have 64 character IDs.
+    if ($App.Id.length -eq 44) {
+      [PSCustomObject]@{
+        "Id"          = $App.Id
+        "DisplayName" = $App.DisplayName
+        "Publisher"   = $App.Publisher
+        "Version"     = $App.Version
+        "Devices"     = @(
+          (Get-DetectedAppManagedDevices -AppId $App.Id).deviceName
+        )
+      }
+    }
 
-  #   # Rate-limit mitigation
-  #   Start-Sleep -Milliseconds 50
+    # Rate-limit mitigation
+    Start-Sleep -Milliseconds 1150
 
-  # }
-
-  $DetectedApps = Get-DetectedAppsManagedDevicesBatch -DetectedApps $AllDetectedApps -BatchSize 20
+  }
 
   Save-Results `
     -StorageContext $StorageContext `
