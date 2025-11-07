@@ -5,7 +5,7 @@ param($Timer)
 Write-Host 'Execution started at:' (Get-Date).ToUniversalTime()
 
 # Execute script
-. "$PSScriptRoot/Get-NewlyInstalledApps-v3.ps1"
+. "$PSScriptRoot/Get-NewlyInstalledApps-Mg1.0.ps1"
 
 # Log end time.
 Write-Host 'Execution ended at:' (Get-Date).ToUniversalTime()

@@ -68,7 +68,7 @@ New-Item -Path .\function\Modules -ItemType Directory
 Save-Module -Name Az.Accounts, Az.Resources, Az.Storage, Microsoft.Graph.Authentication, Microsoft.Graph.DeviceManagement -Path .\function\Modules
 
 # Copy powershell script & supporting modules to the function app's timer trigger
-Copy-Item .\powershell\Get-NewlyInstalledApps-v3.ps1, .\powershell\Functions.psm1, .\powershell\BlobStorage.psm1, .\powershell\SendEmail.psm1 -Destination .\function\TimerTrigger\
+Copy-Item ".\powershell\Get-NewlyInstalledApps-Mg1.0.ps1", ".\powershell\Functions.psm1", ".\powershell\BlobStorage.psm1", ".\powershell\SendEmail.psm1" -Destination ".\function\TimerTrigger\"
 
 Write-Host "What day of the week should the new app report be sent on? Default: Monday"
 
