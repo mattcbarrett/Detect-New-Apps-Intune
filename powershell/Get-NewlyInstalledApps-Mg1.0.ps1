@@ -58,6 +58,23 @@ $Date = Get-Date -Format yyyyMMdd-HHmmss
 $BlobNameDetectedApps = "detected_apps_${Date}.json"
 $BlobNameNewApps = "new_apps_${Date}.json"
 
+####################
+### Ignored apps ###
+####################
+$AppsToIgnore = @(
+  "Microsoft Office*",
+  "Aplikacje Microsoft*",
+  "Microsoft 365*",
+  "Microsoft OneNote*",
+  "Aplicaciones De Microsoft*",
+  "Microsoft Visual C++*",
+  "Microsoft Edge",
+  "Microsoft OneDrive",
+  "Microsoft Windows Desktop Runtime*",
+  "Microsoft ASP.NET*",
+  "Microsoft Teams*"
+)
+
 try {
   # Perform the same check on $EnvFile to determine if we're running in Azure. 
   # Scopes must be specified if so.
@@ -93,13 +110,13 @@ try {
     -ContainerName $STORAGE_CONTAINER_NEW_APPS `
     -OlderThanDays $RETENTION_PERIOD
 
-  Write-Host "Retrieving detected apps from Intune."
+  Write-Host "Retrieving detected apps list from Intune."
 
   $AllDetectedApps = Get-MgDeviceManagementDetectedApp -All
 
-  if ($AllDetectedApps.length -eq 0) {
+  if (!$AllDetectedApps) {
 
-    Write-Host "Intune's detected apps list is empty. Exiting."
+    Write-Host "Retrieving detected apps list failed." -ForegroundColor Red
 
     exit 0
 
@@ -107,7 +124,13 @@ try {
 
   $AllDetectedApps = $AllDetectedApps | Where-Object { $_.Id.Length -eq 44 }
 
+  Write-Host "Retrieved $($AllDetectedApps.Count) apps. Fetching devices for each."
+
   $AllDetectedAppsWithDevices = foreach ($App in $AllDetectedApps) {
+
+    if ($AppsToIgnore.Where({ $App.DisplayName -like $_ }, 'First')) {
+      continue
+    }
 
     [PSCustomObject]@{
       "Id"          = $App.Id
