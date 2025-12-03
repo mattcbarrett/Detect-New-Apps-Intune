@@ -34,6 +34,7 @@ if ($EnvFile) {
   $REPORT_DAY_OF_WEEK = $env["REPORT_DAY_OF_WEEK"]
   $DAYS_TO_AGGREGATE = $env["DAYS_TO_AGGREGATE"]
   $RETENTION_PERIOD = $env["RETENTION_PERIOD"]
+  $APPS_TO_IGNORE = $env["APPS_TO_IGNORE"]
 
 }
 else {
@@ -48,6 +49,7 @@ else {
   $REPORT_DAY_OF_WEEK = $env:REPORT_DAY_OF_WEEK
   $DAYS_TO_AGGREGATE = $env:DAYS_TO_AGGREGATE
   $RETENTION_PERIOD = $env:RETENTION_PERIOD
+  $APPS_TO_IGNORE = $env:APPS_TO_IGNORE | ConvertFrom-Json
 
 }
 
@@ -57,28 +59,6 @@ else {
 $Date = Get-Date -Format yyyyMMdd-HHmmss
 $BlobNameDetectedApps = "detected_apps_${Date}.json"
 $BlobNameNewApps = "new_apps_${Date}.json"
-
-####################
-### Ignored apps ###
-####################
-$AppsToIgnore = @(
-  "Microsoft Office*",
-  "Aplikacje Microsoft*",
-  "Microsoft 365*",
-  "Microsoft OneNote*",
-  "Aplicaciones De Microsoft*",
-  "Microsoft Visual C++*",
-  "Microsoft Edge",
-  "Microsoft OneDrive",
-  "Microsoft Windows Desktop Runtime*",
-  "Microsoft ASP.NET*",
-  "Microsoft .NET*",
-  "Microsoft Intune Management Extension",
-  "Microsoft Support and Recovery Assistant",
-  "Microsoft Update Health Tools",
-  "Microsoft Teams*",
-  "Teams Machine-Wide Installer"
-)
 
 try {
   # Perform the same check on $EnvFile to determine if we're running in Azure. 
