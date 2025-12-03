@@ -72,7 +72,12 @@ $AppsToIgnore = @(
   "Microsoft OneDrive",
   "Microsoft Windows Desktop Runtime*",
   "Microsoft ASP.NET*",
-  "Microsoft Teams*"
+  "Microsoft .NET*",
+  "Microsoft Intune Management Extension",
+  "Microsoft Support and Recovery Assistant",
+  "Microsoft Update Health Tools",
+  "Microsoft Teams*",
+  "Teams Machine-Wide Installer"
 )
 
 try {
@@ -128,6 +133,7 @@ try {
 
   $AllDetectedAppsWithDevices = foreach ($App in $AllDetectedApps) {
 
+    # Compare DisplayName Match on first occurrence
     if ($AppsToIgnore.Where({ $App.DisplayName -like $_ }, 'First')) {
       continue
     }
