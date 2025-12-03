@@ -114,7 +114,7 @@ try {
   $AllDetectedAppsWithDevices = foreach ($App in $AllDetectedApps) {
 
     # Compare DisplayName Match on first occurrence
-    if ($AppsToIgnore.Where({ $App.DisplayName -like $_ }, 'First')) {
+    if ($APPS_TO_IGNORE.Where({ $App.DisplayName -like $_ }, 'First')) {
       continue
     }
 
