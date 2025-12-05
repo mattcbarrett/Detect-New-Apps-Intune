@@ -27,7 +27,14 @@ $LocalSettings = @{
         "Microsoft Support and Recovery Assistant",
         "Microsoft Update Health Tools",
         "Microsoft Teams*",
-        "Teams Machine-Wide Installer"
+        "Cirrus Audio Driver",
+        "Teams Machine-Wide Installer",
+        "Dell*",
+        "HP*",
+        "Lenovo*",
+        "Intel*",
+        "NVIDIA*",
+        "Realtek*"
       ) | ConvertTo-Json -Compress)
   }
 }
