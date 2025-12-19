@@ -33,8 +33,6 @@ The MS Graph beta does offer a granular, per-device detectedApps list. This may 
 
 # Why create this tool?
 
-I wanted a way to (at least partially) satisfy the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" using existing data from Intune. Moreover, I wanted better visbility into which applications were being installed on devices in my environment so I could respond appropriately.
+I've found satisfying the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" to be a challenge at small or under-resourced shops. I wanted to create a solution using existing tools (Intune) that a small operations team with a limited budget can use to provide better visbility on what applications are being brought into the environment. 
 
-# Troubleshooting
-
-Azure Functions Core Tools doesn't always like authenticating via the Azure Powershell SDK. If you get an error from the func publish command, try installing the [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli?view=azure-cli-latest), authenticating via "az login," and executing the func publish command on line 141 of deploy.ps1 again.
+If you've got > 100 computers you probably have better tools in place to do this.
