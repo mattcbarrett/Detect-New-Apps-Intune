@@ -33,6 +33,4 @@ The MS Graph beta does offer a granular, per-device detectedApps list. This may 
 
 # Why create this tool?
 
-I've found satisfying the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" to be a challenge at small or under-resourced shops. I wanted to create a solution using existing tools (Intune) that a small operations team with a limited budget can use to provide better visbility on what applications are being brought into the environment. 
-
-If you've got > 100 computers you probably have better tools in place to do this.
+I've found satisfying the CIS 18 Controls 2.3 "Address Unauthorized Software" and 2.4 "Utilize Automated Software Inventory Tools" to be a challenge at small or under-resourced shops. I wanted to create a solution using existing tools (Intune) that a small operations team with a limited budget can use to provide better visbility on what applications are being brought into the environment.
