@@ -66,7 +66,7 @@ function Read-MostRecentResults {
   return $Results 
 }
 
-function Read-AggregateResults {
+function Read-AggregateAppResults {
   param(
     [Parameter(Mandatory = $true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
     [Parameter(Mandatory = $true)][String]$ContainerName,
@@ -122,6 +122,67 @@ function Read-AggregateResults {
   }
 
   return $DetectedAppAggregate.Values
+  
+}
+
+function Read-AggregateDeviceResults {
+  param(
+    [Parameter(Mandatory = $true)][Microsoft.Azure.Commands.Common.Authentication.Abstractions.IStorageContext]$StorageContext,
+    [Parameter(Mandatory = $true)][String]$ContainerName,
+    [Parameter(Mandatory = $true)][int]$DaysToAggregate
+  )
+
+  $Today = Get-Date
+
+  $xml = Get-Blobs `
+    -StorageContext $StorageContext `
+    -StorageContainer $ContainerName
+
+  $Blobs = $xml.enumerationResults.blobs.blob
+
+  $DaysToAggregate = ($DaysToAggregate * -1)
+
+  $AllBlobs = foreach ($Blob in $Blobs) {
+    # Cast the blob's Creation-Time property from string to DateTime
+    [DateTime]$CreationTime = $Blob.properties.'Creation-Time'
+
+    if ($CreationTime -ge $Today.AddDays($DaysToAggregate)) {
+      [PSCustomObject]@{
+        "Name"          = $Blob.Name
+        "Creation-Time" = $CreationTime
+      }
+    }
+  }
+
+  if ($AllBlobs.length -eq 0) {
+    Write-Host "No blobs found in container: $ContainerName"
+    return
+  }
+
+  $AllBlobs = $AllBlobs | Sort-Object -Property 'Creation-Time' -Descending
+
+  $DeviceAggregate = @{}
+
+  foreach ($Blob in $AllBlobs) {
+    $DevicesWithApps = Read-Blob `
+      -StorageContext $StorageContext `
+      -StorageContainer $ContainerName `
+      -BlobName $Blob.Name `
+
+    foreach ($Device in $DevicesWithApps) {
+      if ($DeviceAggregate.ContainsKey($Device.Id)) {
+        $Apps = @($DeviceAggregate[$Device.Id].Apps) + @($Device.Apps | Select-Object -ExpandProperty displayName)
+        $Apps = $Apps -join ', '
+        $DeviceAggregate[$Device.Id].Apps = $Apps | Sort-Object -Unique
+      }
+      else {
+        $Device.Apps = $Device.Apps | Select-Object -ExpandProperty displayName
+        $DeviceAggregate[$Device.Id] = $Device
+      }
+    }
+  }
+
+  return $DeviceAggregate.Values
   
 }
 
@@ -187,9 +248,31 @@ function Get-DetectedAppManagedDevices {
   catch {
     return $null
   }
-  
-
-  
 }
 
-Export-ModuleMember -Function Save-Results, Read-MostRecentResults, Read-AggregateResults, Invoke-MgGraphRequestWithRetry, Get-DetectedAppManagedDevices
+function Get-ManagedDeviceDetectedApps {
+  param(
+    [Parameter(Mandatory = $true)]
+    [string]$DeviceId
+  )
+
+  $Context = Get-MgContext
+  if (-not $Context) {
+    throw "Not connected to Microsoft Graph. Please run Connect-MgGraph first."
+  }
+
+  $Uri = "beta/deviceManagement/managedDevices/$($DeviceId)/detectedApps?`$select=id,displayName,version"
+  $Method = "GET"
+  $MaxRetries = 5
+
+  try {
+    $results = Invoke-MgGraphRequestWithRetry -Uri $Uri -Method $Method -MaxRetries $MaxRetries
+
+    return $results.value
+  }
+  catch {
+    return $null
+  }
+}
+
+Export-ModuleMember -Function Save-Results, Read-MostRecentResults, Read-AggregateAppResults, Read-AggregateDeviceResults, Invoke-MgGraphRequestWithRetry, Get-DetectedAppManagedDevices, Get-ManagedDeviceDetectedApps

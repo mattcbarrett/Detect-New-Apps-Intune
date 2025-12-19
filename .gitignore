@@ -47,6 +47,8 @@ __blobstorage__
 __queuestorage__
 __azurite_db*__.json
 
+powershell/env.psd1
+
 function/Modules/
 function/TimerTrigger/BlobStorage.psm1
 function/TimerTrigger/SendEmail.psm1
@@ -55,3 +57,4 @@ function/TimerTrigger/Get-NewlyInstalledApps.ps1
 function/TimerTrigger/Get-NewlyInstalledApps-v2.ps1
 function/TimerTrigger/Get-NewlyInstalledApps-Mg1.0.ps1
 function/TimerTrigger/Get-NewlyInstalledApps-MgBeta.ps1
+

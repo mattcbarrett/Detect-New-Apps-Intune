@@ -57,8 +57,8 @@ else {
 ### Constants ###
 ################# 
 $Date = Get-Date -Format yyyyMMdd-HHmmss
-$BlobNameDetectedApps = "detected_apps_${Date}.json"
-$BlobNameNewApps = "new_apps_${Date}.json"
+$BlobNameDetectedApps = "devices_with_detected_apps_${Date}.json"
+$BlobNameNewApps = "devices_with_new_apps_${Date}.json"
 
 try {
   # Perform the same check on $EnvFile to determine if we're running in Azure. 
@@ -95,37 +95,36 @@ try {
     -ContainerName $STORAGE_CONTAINER_NEW_APPS `
     -OlderThanDays $RETENTION_PERIOD
 
-  Write-Host "Retrieving detected apps list from Intune."
+  Write-Host "Retrieving detected apps from Intune."
 
-  $AllDetectedApps = Get-MgDeviceManagementDetectedApp -All
+  $AllDevices = Get-MgDeviceManagementManagedDevice -All
 
-  if (!$AllDetectedApps) {
+  if ($AllDevices.length -eq 0) {
 
-    Write-Host "Retrieving detected apps list failed." -ForegroundColor Red
+    Write-Host "No devices found in Intune."
 
     exit 0
 
   }
 
-  $AllDetectedApps = $AllDetectedApps | Where-Object { $_.Id.Length -eq 44 }
+  $DevicesWithApps = foreach ($Device in $AllDevices) {
 
-  Write-Host "Retrieved $($AllDetectedApps.Count) apps. Fetching devices for each."
-
-  $AllDetectedAppsWithDevices = foreach ($App in $AllDetectedApps) {
-
-    # Compare DisplayName Match on first occurrence
-    if ($APPS_TO_IGNORE.Where({ $App.DisplayName -like $_ }, 'First')) {
-      continue
+    $DetectedApps = Get-ManagedDeviceDetectedApps -DeviceId $Device.Id |
+    Where-Object { 
+      $App = $_
+      $App.Id.Length -eq 44 -and
+      -not ($APPS_TO_IGNORE.Where({ $App.DisplayName -like $_ }, 'First'))
+    } |
+    ForEach-Object {
+      $_.Id = $_.Id -replace ".{4}$"
+      $_
     }
 
     [PSCustomObject]@{
-      "Id"          = $App.Id
-      "DisplayName" = $App.DisplayName
-      "Publisher"   = $App.Publisher
-      "Version"     = $App.Version
-      "Devices"     = @(
-        (Get-DetectedAppManagedDevices -AppId $App.Id).deviceName
-      )
+      "Id"           = $Device.Id
+      "DeviceName"   = $Device.DeviceName
+      "SerialNumber" = $Device.SerialNumber
+      "Apps"         = $DetectedApps
     }
 
     # Rate-limit mitigation
@@ -133,50 +132,17 @@ try {
 
   }
 
-  $DetectedApps = @()
-
-  # One app & version combination can have more than one ID in
-  # Intune's detectedApps list.
-  # We need to combine IDs and ensure the Devices are unique.
-
-  foreach ($App in $AllDetectedAppsWithDevices) {
-
-    # Last 4 chars of the ID is an internal flag in Intune.
-    # They end in ffff, 0904, and maybe others.
-    # We need to strip it to get the base ID and combine the device lists.
-
-    $App.Id = $App.Id -replace ".{4}$"
-
-    $ExistingApp = $DetectedApps | Where-Object { $_.Id -eq $App.Id }
-
-    if (!$ExistingApp) {
-
-      $DetectedApps += $App
-
-    }
-    else {
-
-      if ($App.Devices) {
-
-        $ExistingApp.Devices += $App.Devices | Where-Object { $_ -notin $ExistingApp.Devices }
-
-      }
-      
-    }
-
-  }
-
   Save-Results `
     -StorageContext $StorageContext `
     -ContainerName $STORAGE_CONTAINER_DETECTED_APPS `
     -BlobName $BlobNameDetectedApps `
-    -Data $DetectedApps
+    -Data $DevicesWithApps
 
-  $PreviousDetectedApps = Read-MostRecentResults `
+  $PreviousDevicesWithApps = Read-MostRecentResults `
     -StorageContext $StorageContext `
     -ContainerName $STORAGE_CONTAINER_DETECTED_APPS
 
-  if (!$PreviousDetectedApps) {
+  if (!$PreviousDevicesWithApps) {
 
     Write-Host "No prior detected apps found in container: $STORAGE_CONTAINER_DETECTED_APPS.`nThis is expected on the first run. Exiting."
 
@@ -189,38 +155,40 @@ try {
 
   $Detections = @(
 
-    foreach ($PreviousApp in $PreviousDetectedApps) {
+    foreach ($PreviousDevice in $PreviousDevicesWithApps) {
 
-      $ExistingApp = $DetectedApps | Where-Object { $_.Id -eq $PreviousApp.Id }
+      $ExistingDevice = $DevicesWithApps | Where-Object { $_.Id -eq $PreviousDevice.Id }
       
-      if ($ExistingApp) {
+      if ($ExistingDevice) {
 
-        $NewDevices = $ExistingApp.Devices | Where-Object { $_ -notin $PreviousApp.Devices }
+        $PreviousAppsIds = $PreviousDevice.Apps | ForEach-Object { $_.id }
+
+        $NewApps = $ExistingDevice.Apps | Where-Object { $_.Id -notin $PreviousAppsIds }
           
-        if ($NewDevices) {
+        if ($NewApps) {
 
           [PSCustomObject]@{
-            "Id"               = $ExistingApp.Id
-            "Application Name" = $ExistingApp.DisplayName
-            "Version"          = $ExistingApp.Version
-            "Devices"          = @($NewDevices) # Needs to become an array
+            "Id"           = $ExistingDevice.Id
+            "DeviceName"   = $ExistingDevice.DeviceName
+            "SerialNumber" = $ExistingDevice.SerialNumber
+            "Apps"         = $NewApps
           }
 
         }
-        
+
       }
 
     }
 
-    $NewApps = $DetectedApps | Where-Object { $_.Id -notin $PreviousDetectedApps.Id }
+    $NewDevices = $DevicesWithApps | Where-Object { $_.Id -notin $PreviousDevicesWithApps.Id }
 
-    foreach ($NewApp in $NewApps) {
+    foreach ($Device in $NewDevices) {
 
       [PSCustomObject]@{
-        "Id"               = $NewApp.Id
-        "Application Name" = $NewApp.DisplayName
-        "Version"          = $NewApp.Version
-        "Devices"          = $NewApp.Devices # Already an array
+        "Id"           = $ExistingDevice.Id
+        "DeviceName"   = $ExistingDevice.DeviceName
+        "SerialNumber" = $ExistingDevice.SerialNumber
+        "Apps"         = $NewApps
       }
 
     }
@@ -236,6 +204,7 @@ try {
       -Data $Detections
 
   }
+
   else {
 
     Write-Host "No new apps found, skipping upload to blob storage."
@@ -245,7 +214,7 @@ try {
   # If it's $REPORT_DAY_OF_WEEK, grab the last week's worth of diffs and send the report
   if ((Get-Date).DayOfWeek -eq $REPORT_DAY_OF_WEEK) {
 
-    $AggregateResults = Read-AggregateAppResults `
+    $AggregateResults = Read-AggregateDeviceResults `
       -StorageContext $StorageContext `
       -ContainerName $STORAGE_CONTAINER_NEW_APPS `
       -DaysToAggregate $DAYS_TO_AGGREGATE
@@ -253,19 +222,19 @@ try {
     if ($AggregateResults.length -eq 0) {
 
       Write-Host "No new apps found in the last $DAYS_TO_AGGREGATE days."
-      
+
       Send-Email `
         -From $EMAIL_FROM `
         -To $EMAIL_TO `
         -Subject 'App detections' `
         -Body "No new apps found in the last $DAYS_TO_AGGREGATE days."
-      
+
       exit 0
 
     }
 
     # Format so output isn't truncated
-    $ResultString = $AggregateResults | Select-Object 'Application Name', 'Version', @{Name = 'Devices'; Expression = { $_.Devices -join ', ' } } | Format-List | Out-String
+    $ResultString = $AggregateResults | Format-List -Property 'DeviceName', 'SerialNumber', 'Apps' | Out-String
 
     Write-Host "`nResults:`n $ResultString"
 
