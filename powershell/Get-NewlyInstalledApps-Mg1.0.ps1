@@ -265,7 +265,7 @@ try {
     }
 
     # Format so output isn't truncated
-    $ResultString = $AggregateResults | Select-Object 'Application Name', 'Version', @{Name = 'Devices'; Expression = { $_.Devices -join ', ' } } | Format-List | Out-String
+    $ResultString = $AggregateResults | Sort-Object 'Application Name' | Select-Object 'Application Name', 'Version', @{Name = 'Devices'; Expression = { $_.Devices -join ', ' } } | Format-List | Out-String
 
     Write-Host "`nResults:`n $ResultString"
 
