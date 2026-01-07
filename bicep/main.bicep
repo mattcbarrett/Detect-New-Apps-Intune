@@ -9,7 +9,11 @@ param constants object = loadJsonContent('./constants.json')
 param appName string = '${constants.appName}'
 param environmentName string = '${constants.environmentName}'
 param location string = '${constants.location}'
-param resourceToken string = substring(toLower(uniqueString(subscription().id, environmentName, location, appName)), 0, 7)
+param resourceToken string = substring(
+  toLower(uniqueString(subscription().id, environmentName, location, appName)),
+  0,
+  7
+)
 param resourceGroupName string = '${abbrs.resourcesResourceGroups}${appName}-${resourceToken}-${environmentName}'
 param storageAccountName string = '${abbrs.storageStorageAccounts}${resourceToken}'
 param storageContainerNameDetectedApps string = '${constants.storageContainerNameDetectedApps}'
@@ -25,14 +29,14 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 module logs 'logs.bicep' = {
- name: '${constants.logsAnalyticsDeploymentName}'
- scope: resourceGroup
- params: {
-  workspaceName:'${appName}-${resourceToken}-logs'
-  location: location
-  resourcePermissions: true
-  heartbeatTableRetention: 30
- }
+  name: '${constants.logsAnalyticsDeploymentName}'
+  scope: resourceGroup
+  params: {
+    workspaceName: '${appName}-${resourceToken}-logs'
+    location: location
+    resourcePermissions: true
+    heartbeatTableRetention: 30
+  }
 }
 
 module storage 'storage.bicep' = {

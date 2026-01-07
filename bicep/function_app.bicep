@@ -64,6 +64,9 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
           value: appInsights.properties.ConnectionString
         }
       ]
+      ftpsState: 'Disabled'
+      minTlsVersion: '1.2'
+      remoteDebuggingEnabled: false
     }
     functionAppConfig: {
       deployment: {
@@ -76,8 +79,8 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
         }
       }
       scaleAndConcurrency: {
-        maximumInstanceCount: 100
-        instanceMemoryMB: 4096
+        maximumInstanceCount: 2
+        instanceMemoryMB: 2048
       }
       runtime: {
         name: runtime
@@ -85,6 +88,26 @@ resource functionApp 'Microsoft.Web/sites@2024-04-01' = {
       }
     }
     httpsOnly: true
+  }
+}
+
+resource functionAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: '${functionAppName}-diag'
+  scope: functionApp
+  properties: {
+    workspaceId: logAnalyticsWorkspaceId
+    logs: [
+      {
+        category: 'FunctionAppLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
   }
 }
 

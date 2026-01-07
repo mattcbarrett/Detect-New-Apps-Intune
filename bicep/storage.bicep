@@ -15,6 +15,18 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2022-09-01' = {
   properties: {
     allowBlobPublicAccess: false
     supportsHttpsTrafficOnly: true
+    allowSharedKeyAccess: false
+    minimumTlsVersion: 'TLS1_2'
+    encryption: {
+      requireInfrastructureEncryption: true
+      services: {
+        blob: {
+          enabled: true
+          keyType: 'Account'
+        }
+      }
+      keySource: 'Microsoft.Storage'
+    }
   }
 }
 
@@ -54,7 +66,15 @@ resource storageDataPlaneLogs 'Microsoft.Insights/diagnosticSettings@2021-05-01-
     workspaceId: logAnalyticsWorkspaceId
     logs: [
       {
+        category: 'StorageRead'
+        enabled: true
+      }
+      {
         category: 'StorageWrite'
+        enabled: true
+      }
+      {
+        category: 'StorageDelete'
         enabled: true
       }
     ]

@@ -187,3 +187,5 @@ $ProfileClient = New-Object Microsoft.Azure.Commands.ResourceManager.Common.RMPr
 func azure functionapp publish $FunctionAppOutputs.functionAppName.Value `
   --publish-local-settings `
   --access-token $($ProfileClient.AcquireAccessToken($CurrentAzureContext.Subscription.TenantId).AccessToken)
+
+Set-Location ..\
