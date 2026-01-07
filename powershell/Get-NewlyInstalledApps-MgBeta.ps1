@@ -234,7 +234,7 @@ try {
     }
 
     # Format so output isn't truncated
-    $ResultString = $AggregateResults | Format-List -Property 'DeviceName', 'SerialNumber', 'Apps' | Out-String
+    $ResultString = $AggregateResults | Sort-Object 'DeviceName' | Format-List -Property 'DeviceName', 'SerialNumber', 'Apps' | Out-String
 
     Write-Host "`nResults:`n $ResultString"
 
