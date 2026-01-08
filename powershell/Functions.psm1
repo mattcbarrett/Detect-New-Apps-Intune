@@ -6,7 +6,7 @@ function Save-Results {
     [Parameter(Mandatory = $true)]$Data
   )
 
-  $Body = $Data | ConvertTo-Json
+  $Body = $Data | ConvertTo-Json -Depth 10
   $ContentType = "text/json"
 
   $Result = Write-Blob `
